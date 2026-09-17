@@ -32,13 +32,21 @@ function rowUnitCost(row: Row, unit: (sym: string) => number): number {
 }
 
 /** เลเวลที่ทำให้ต้นทุนวัตถุดิบต่อชิ้นถูกที่สุด */
-function cheapestCraftCost(f: Factory, unit: (sym: string) => number): number {
-  let best = Infinity;
+function cheapestCraftRow(
+  f: Factory,
+  unit: (sym: string) => number,
+): { row: Row; unitCost: number } | null {
+  let best: { row: Row; unitCost: number } | null = null;
   for (const row of f.rows) {
     if (Object.keys(row.inputs).length === 0) continue;
-    best = Math.min(best, rowUnitCost(row, unit));
+    const c = rowUnitCost(row, unit);
+    if (!best || c < best.unitCost) best = { row, unitCost: c };
   }
   return best;
+}
+
+function cheapestCraftCost(f: Factory, unit: (sym: string) => number): number {
+  return cheapestCraftRow(f, unit)?.unitCost ?? Infinity;
 }
 
 /** ต้นทุนต่อหน่วยของทุกไอเทมภายใต้โมเดลที่เลือก (กราฟสูตรเป็น DAG จึงไม่วน) */
@@ -131,4 +139,46 @@ export function craftChain(sym: string, mode: CostMode): string[] {
   const f = DATA.factories[sym];
   if (f) for (const r of f.rows) for (const input of Object.keys(r.inputs)) walk(input);
   return [...seen];
+}
+
+/** ของหนึ่งอย่างที่ต้องซื้อจากตลาด */
+export type Purchase = {
+  sym: string;
+  qty: number;
+  unitPrice: number;
+  subtotal: number;
+};
+
+/**
+ * รายการที่ต้องซื้อจริงสำหรับการผลิตหนึ่งรอบ
+ *
+ * กางสายลงไปจนถึงชั้นที่โมเดลเลือก "ซื้อ" แล้วรวมจำนวนของแต่ละอย่างเข้าด้วยกัน
+ * ผลรวมของ subtotal จึงเท่ากับต้นทุนของแถวนั้นพอดี
+ */
+export function shoppingList(row: Row, mode: CostMode): Purchase[] {
+  const qtyBySym = new Map<string, number>();
+
+  const add = (sym: string, qty: number, depth: number) => {
+    const craftIt = depth < 64 && sourcedByCrafting(mode, sym);
+    const best = craftIt
+      ? cheapestCraftRow(DATA.factories[sym], (s) => unitCost(mode, s))
+      : null;
+
+    if (!best) {
+      qtyBySym.set(sym, (qtyBySym.get(sym) ?? 0) + qty);
+      return;
+    }
+    for (const [s, q] of Object.entries(best.row.inputs)) {
+      add(s, (qty * q) / best.row.out, depth + 1);
+    }
+  };
+
+  for (const [sym, qty] of Object.entries(row.inputs)) add(sym, qty, 0);
+
+  return [...qtyBySym]
+    .map(([sym, qty]) => {
+      const unitPrice = DATA.buy[sym] ?? Infinity;
+      return { sym, qty, unitPrice, subtotal: qty * unitPrice };
+    })
+    .sort((a, b) => b.subtotal - a.subtotal);
 }

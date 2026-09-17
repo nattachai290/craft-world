@@ -46,3 +46,13 @@ export function bestRow<T extends Row>(rows: T[]): T {
 export function bestPctRow<T extends Row>(rows: T[]): T {
   return rows.reduce((a, b) => ((b.pct ?? -Infinity) > (a.pct ?? -Infinity) ? b : a));
 }
+
+/**
+ * ตัวเลขเต็มพร้อมตัวคั่นหลักพัน ใช้กับรายการที่ต้องซื้อซึ่งอยากเห็นจำนวนจริง
+ * ระบุ locale ไว้ชัดเจนเพื่อให้ผลฝั่ง server กับ client ตรงกัน
+ */
+export function num(n: number | null | undefined, max = 2): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  if (Math.abs(n) >= 1e9) return fmt(n, 2);
+  return n.toLocaleString("en-US", { maximumFractionDigits: max });
+}

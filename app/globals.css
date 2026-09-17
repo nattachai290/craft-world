@@ -253,6 +253,35 @@ abbr.base {
   cursor: help;
 }
 
+/* ---------- รายการที่ต้องซื้อ ---------- */
+
+.buypanel { border-bottom: 1px solid var(--line); background: var(--surface2); }
+.buyhead {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  padding: 12px 16px 8px;
+}
+.buyhead h3 { margin: 0; font-size: .9rem; font-weight: 700; }
+.buynote { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
+
+.buylist { background: var(--surface); }
+.buylist thead th { position: static; background: var(--surface2); }
+.buylist tbody tr, .buylist tfoot tr { border-bottom: 1px solid var(--line); }
+.buylist tbody th, .buylist tfoot th { white-space: normal; }
+.buylist tfoot tr:first-child { border-top: 2px solid var(--line); }
+.buylist tfoot th { color: var(--muted); font-weight: 600; }
+.buylist tfoot td { font-weight: 600; }
+.buylist tfoot tr.pos td, .buylist tfoot tr.pos th { color: var(--pos); }
+.buylist tfoot tr.neg td, .buylist tfoot tr.neg th { color: var(--neg); }
+.buylist tfoot tr:last-child { border-bottom: 0; }
+
+/* ปุ่มเลือกเลเวลในตารางหลัก */
+.lvbtn {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0;
+  cursor: pointer; text-align: left;
+}
+tr.lvsel { box-shadow: inset 3px 0 0 var(--accent); }
+tr.lvsel th .lvbtn { color: var(--accent); }
+
 /* ---------- ตาราง ---------- */
 
 .tblwrap { overflow: auto; -webkit-overflow-scrolling: touch; }

@@ -3,8 +3,14 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
-import { costRows, craftChain, sourcedByCrafting, type CostedRow } from "@/lib/cost";
-import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct } from "@/lib/format";
+import {
+  costRows,
+  craftChain,
+  shoppingList,
+  sourcedByCrafting,
+  type CostedRow,
+} from "@/lib/cost";
+import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct, num } from "@/lib/format";
 import { isBaseItem, itemName } from "@/lib/items";
 import type { CostMode, Factory, SortKey } from "@/lib/types";
 
@@ -197,7 +203,12 @@ export default function ProfitMatrix() {
             </button>
             <span className="detailbar-name">{detail.name}</span>
           </div>
-          <FactoryDetail factory={detail} rows={rowsOf(detail)} mode={mode} />
+          <FactoryDetail
+            key={detail.output + mode}
+            factory={detail}
+            rows={rowsOf(detail)}
+            mode={mode}
+          />
         </div>
       </div>
     </>
@@ -216,6 +227,10 @@ function FactoryDetail({
   const best = bestRow(rows);
   const bestPct = bestPctRow(rows);
   const chain = mode === "market" ? [] : craftChain(factory.output, mode);
+
+  // แถวที่กางรายการซื้อให้ดู เริ่มที่เลเวลกำไรดีสุด กดแถวอื่นเพื่อเปลี่ยนได้
+  const [pickedLv, setPickedLv] = useState(best.lv);
+  const picked = rows.find((r) => r.lv === pickedLv) ?? best;
 
   return (
     <div className="panel">
@@ -245,6 +260,8 @@ function FactoryDetail({
           </p>
         )}
       </div>
+
+      <BuyList row={picked} mode={mode} />
 
       <div className="tblwrap">
         <table>
@@ -281,11 +298,20 @@ function FactoryDetail({
                   "—"
                 );
               const isBest = r.lv === best.lv;
+              const cls =
+                (isBest ? "bestrow" : "") + (r.lv === pickedLv ? " lvsel" : "");
               return (
                 <Fragment key={r.lv}>
-                  <tr className={isBest ? "bestrow" : undefined}>
+                  <tr className={cls || undefined} onClick={() => setPickedLv(r.lv)}>
                     <th scope="row">
-                      <span className="lvnum">Lv{r.lv}</span>
+                      <button
+                        type="button"
+                        className="lvnum lvbtn"
+                        aria-pressed={r.lv === pickedLv}
+                        onClick={() => setPickedLv(r.lv)}
+                      >
+                        Lv{r.lv}
+                      </button>
                     </th>
                     <td className="c-out">{fmt(r.out, r.out < 10 ? 2 : 0)}</td>
                     <td className="c-in">{ins}</td>
@@ -297,7 +323,7 @@ function FactoryDetail({
                     <td className={r.perday >= 0 ? "pos" : "neg"}>{fmtc(r.perday)}</td>
                   </tr>
                   {/* จอแคบซ่อนคอลัมน์รายละเอียด แถวนี้จึงรับไปแสดงเต็มความกว้างแทน */}
-                  <tr className={"subrow" + (isBest ? " bestrow" : "")}>
+                  <tr className={"subrow" + (cls ? " " + cls : "")} onClick={() => setPickedLv(r.lv)}>
                     <td colSpan={4}>
                       <span className="sub-k">ผลผลิต</span> {fmt(r.out, r.out < 10 ? 2 : 0)}
                       <span className="sub-sep">·</span>
@@ -353,5 +379,81 @@ function Ingredients({
         );
       })}
     </>
+  );
+}
+
+/**
+ * รายการที่ต้องควักเงินซื้อจริงสำหรับการผลิตหนึ่งรอบ
+ *
+ * โหมด market คือวัตถุดิบชั้นถัดไปตรง ๆ ส่วนอีกสองโหมดกางสายลงไปจนถึงชั้นที่เลือกซื้อ
+ * ผลรวมจึงเท่ากับต้นทุนของแถวนั้นเสมอ
+ */
+function BuyList({ row, mode }: { row: CostedRow; mode: CostMode }) {
+  const purchases = shoppingList(row, mode);
+
+  return (
+    <section className="buypanel" aria-label="รายการที่ต้องซื้อ">
+      <div className="buyhead">
+        <h3>ต้องซื้ออะไรบ้าง · Lv{row.lv}</h3>
+        <span className="buynote">
+          ต่อ 1 รอบ ({dur(row.dur)}) ได้ {fmt(row.out, row.out < 10 ? 2 : 0)} ชิ้น
+        </span>
+      </div>
+
+      {purchases.length === 0 ? (
+        <p className="empty">ไม่ต้องซื้ออะไร — เป็นเหมือง ขุดได้เอง</p>
+      ) : (
+        <div className="tblwrap">
+          <table className="buylist">
+            <thead>
+              <tr>
+                <th scope="col">ซื้อ</th>
+                <th scope="col">จำนวน</th>
+                <th scope="col">ราคา/หน่วย</th>
+                <th scope="col">รวม</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchases.map((p) => (
+                <tr key={p.sym}>
+                  <th scope="row">
+                    {isBaseItem(p.sym) ? (
+                      <abbr
+                        className="base"
+                        title="ของพื้นฐาน ไม่มีโรงงานผลิต ต้องซื้อด้วย coin"
+                      >
+                        {itemName(p.sym)}
+                      </abbr>
+                    ) : (
+                      itemName(p.sym)
+                    )}
+                  </th>
+                  <td>{num(p.qty)}</td>
+                  <td>{num(p.unitPrice, p.unitPrice < 1 ? 6 : 2)}</td>
+                  <td>{num(p.subtotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">รวมต้นทุน</th>
+                <td colSpan={2} />
+                <td>{num(row.cost)}</td>
+              </tr>
+              <tr>
+                <th scope="row">ขายได้</th>
+                <td colSpan={2} />
+                <td>{num(row.rev)}</td>
+              </tr>
+              <tr className={row.profit >= 0 ? "pos" : "neg"}>
+                <th scope="row">กำไร/รอบ</th>
+                <td colSpan={2}>{fmtPct(row.pct)}</td>
+                <td>{fmtc(row.profit)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
