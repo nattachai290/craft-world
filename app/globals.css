@@ -212,6 +212,13 @@ h1 { font-size: clamp(1.35rem, 5vw, 2.2rem); font-weight: 800; letter-spacing: -
 .chip.neg { background: var(--neg-soft); color: var(--neg); }
 .chip.mute { background: var(--surface2); color: var(--muted); }
 
+/* ของพื้นฐานที่ต้องใช้ coin ซื้อ ไม่มีโรงงานผลิตให้เอง */
+abbr.base {
+  text-decoration: underline dotted var(--accent);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
 /* ---------- ตาราง ---------- */
 
 .tblwrap { overflow: auto; -webkit-overflow-scrolling: touch; }

@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import { DATA } from "@/lib/data";
 import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct } from "@/lib/format";
+import { isBaseItem, itemName } from "@/lib/items";
 import type { Factory, SortKey } from "@/lib/types";
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -12,11 +13,6 @@ const SORTS: { key: SortKey; label: string }[] = [
 ];
 
 const FACTORIES = Object.values(DATA.factories);
-
-/** ชื่อไทย/อังกฤษของทรัพยากร ใช้ตอนแสดงสูตรวัตถุดิบ */
-function itemName(sym: string): string {
-  return DATA.disp[sym] ?? DATA.factories[sym]?.name ?? sym;
-}
 
 function recipe(f: Factory): string {
   return f.inputNames.join(" + ") || "เหมือง";
@@ -213,9 +209,7 @@ function FactoryDetail({ factory }: { factory: Factory }) {
             {factory.rows.map((r) => {
               const pos = r.profit >= 0;
               const ins =
-                Object.entries(r.inputs)
-                  .map(([sym, amt]) => `${fmt(amt, amt < 10 ? 2 : 0)} ${itemName(sym)}`)
-                  .join(" + ") || "—";
+                Object.keys(r.inputs).length > 0 ? <Ingredients inputs={r.inputs} /> : "—";
               const isBest = r.lv === best.lv;
               return (
                 <Fragment key={r.lv}>
@@ -249,5 +243,30 @@ function FactoryDetail({ factory }: { factory: Factory }) {
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * รายการวัตถุดิบของหนึ่งรอบการผลิต
+ * ของพื้นฐาน (Dust / Fire / Water) ไม่มีโรงงานผลิต ต้องใช้ coin ซื้อจากตลาดอย่างเดียว
+ * จึงทำเครื่องหมายไว้ให้แยกออกจากของที่คราฟต์เองได้
+ */
+function Ingredients({ inputs }: { inputs: Record<string, number> }) {
+  return (
+    <>
+      {Object.entries(inputs).map(([sym, amt], i) => (
+        <span key={sym}>
+          {i > 0 && " + "}
+          {fmt(amt, amt < 10 ? 2 : 0)}{" "}
+          {isBaseItem(sym) ? (
+            <abbr className="base" title="ของพื้นฐาน ไม่มีโรงงานผลิต ต้องซื้อด้วย coin">
+              {itemName(sym)}
+            </abbr>
+          ) : (
+            itemName(sym)
+          )}
+        </span>
+      ))}
+    </>
   );
 }

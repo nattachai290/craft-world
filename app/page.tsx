@@ -1,6 +1,7 @@
 import ProfitMatrix from "@/components/ProfitMatrix";
 import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
+import { BASE_ITEM_NAMES } from "@/lib/items";
 
 export default function Home() {
   return (
@@ -24,9 +25,13 @@ export default function Home() {
         (86400 ÷ วินาทีต่อรอบ) · % = กำไร/รอบ ÷ ต้นทุน
         <br />
         <br />
+        <b>ของพื้นฐาน:</b> {BASE_ITEM_NAMES.join(" · ")} ไม่มีโรงงานผลิต
+        หามาได้ทางเดียวคือใช้ coin ซื้อจากตลาด (ในตารางขีดเส้นประไว้ใต้ชื่อ) ส่วน Earth
+        เป็นเหมือง ขุดได้เองโดยไม่มีต้นทุนวัตถุดิบ
+        <br />
+        <br />
         <b>ข้อจำกัด:</b> ยังไม่รวม price impact เวลาซื้อ/ขายจำนวนมาก (pool ตื้น ราคาจริงจะแย่กว่านี้),
-        ค่า power, และค่าอัปเกรดโรงงาน (ลงทุนครั้งเดียว) · ราคาเป็น snapshot อาจเปลี่ยนแล้ว · Earth
-        เป็นเหมือง (ไม่มีต้นทุนวัตถุดิบ จึงเป็นกำไรล้วน) · ทรัพยากรที่ pool แทบไม่มีสภาพคล่อง (เช่น
+        ค่า power, และค่าอัปเกรดโรงงาน (ลงทุนครั้งเดียว) · ราคาเป็น snapshot อาจเปลี่ยนแล้ว · ทรัพยากรที่ pool แทบไม่มีสภาพคล่อง (เช่น
         Screws) ราคาซื้อจะสูงผิดปกติ ทำให้โรงงานที่ใช้มันติดลบมหาศาล
       </div>
 
