@@ -39,3 +39,6 @@ export type PriceData = {
 };
 
 export type SortKey = "perday" | "pct" | "name";
+
+/** วัตถุดิบมาจากไหน — ดูคำอธิบายแต่ละแบบใน lib/cost.ts */
+export type CostMode = "market" | "chain" | "mixed";

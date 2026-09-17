@@ -1,15 +1,35 @@
 "use client";
 
 import { Fragment, useMemo, useRef, useState } from "react";
+import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
+import { costRows, craftChain, sourcedByCrafting, type CostedRow } from "@/lib/cost";
 import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct } from "@/lib/format";
 import { isBaseItem, itemName } from "@/lib/items";
-import type { Factory, SortKey } from "@/lib/types";
+import type { CostMode, Factory, SortKey } from "@/lib/types";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "perday", label: "กำไร/วัน" },
   { key: "pct", label: "%" },
   { key: "name", label: "ชื่อ" },
+];
+
+const MODES: { key: CostMode; label: string; desc: string }[] = [
+  {
+    key: "market",
+    label: "ซื้อวัตถุดิบ",
+    desc: "ซื้อวัตถุดิบชั้นถัดไปจากตลาด คราฟต์ 1 รอบ แล้วขายผลผลิตกลับเข้าตลาดทันที",
+  },
+  {
+    key: "chain",
+    label: "คราฟต์สุดสาย",
+    desc: "ซื้อเฉพาะของที่ผลิตเองไม่ได้ (Dust · Fire · Water) กับ Earth นอกนั้นคราฟต์เองทุกชั้นจนถึงเป้าหมาย",
+  },
+  {
+    key: "mixed",
+    label: "เลือกที่ถูกกว่า",
+    desc: "ไล่ทีละชั้น ชั้นไหนซื้อจากตลาดถูกกว่าก็ซื้อ ชั้นไหนคราฟต์เองถูกกว่าก็ทำเอง",
+  },
 ];
 
 const FACTORIES = Object.values(DATA.factories);
@@ -34,127 +54,168 @@ function scrollIntoViewOnNarrow(el: HTMLElement | null) {
 }
 
 export default function ProfitMatrix() {
+  const [mode, setMode] = useState<CostMode>("market");
   const [sortKey, setSortKey] = useState<SortKey>("perday");
   const [profitOnly, setProfitOnly] = useState(false);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string>(
-    () => FACTORIES.reduce((a, b) => (bestRow(b).perday > bestRow(a).perday ? b : a)).output,
-  );
+  const [selected, setSelected] = useState<string>("EARTH");
 
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
+  const costed = useMemo(
+    () => new Map(FACTORIES.map((f) => [f.output, costRows(f, mode)] as const)),
+    [mode],
+  );
+  const rowsOf = (f: Factory) => costed.get(f.output) ?? [];
+
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
     const out = FACTORIES.filter(
-      (f) => (!profitOnly || bestRow(f).profit > 0) && matches(f, q),
+      (f) =>
+        (!profitOnly || bestRow(costed.get(f.output) ?? []).profit > 0) && matches(f, q),
     );
 
     if (sortKey === "name") return out.sort((a, b) => a.name.localeCompare(b.name));
-    if (sortKey === "pct")
-      return out.sort(
-        (a, b) => (bestPctRow(b).pct ?? -Infinity) - (bestPctRow(a).pct ?? -Infinity),
-      );
-    return out.sort((a, b) => bestRow(b).perday - bestRow(a).perday);
-  }, [sortKey, profitOnly, query]);
+    const pick = sortKey === "pct" ? bestPctRow : bestRow;
+    const score = (f: Factory) => {
+      const r = pick(costed.get(f.output) ?? []);
+      return sortKey === "pct" ? (r.pct ?? -Infinity) : r.perday;
+    };
+    return out.sort((a, b) => score(b) - score(a));
+  }, [sortKey, profitOnly, query, costed]);
 
   const detail = DATA.factories[selected] ?? list[0] ?? FACTORIES[0];
+  const activeMode = MODES.find((m) => m.key === mode)!;
 
   return (
-    <div className="layout">
-      <div className="panel side" ref={listRef}>
-        <div className="phead">
-          <h2>โรงงาน</h2>
-          <span className="count">
-            {list.length}/{FACTORIES.length}
-          </span>
-        </div>
-
-        <div className="search">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="ค้นหาโรงงาน หรือ วัตถุดิบ…"
-            aria-label="ค้นหาโรงงานหรือวัตถุดิบ"
-          />
-        </div>
-
-        <div className="ctrls" role="group" aria-label="เรียงลำดับและกรอง">
-          <span className="ctrls-label">เรียง</span>
-          {SORTS.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              className={sortKey === s.key ? "on" : undefined}
-              aria-pressed={sortKey === s.key}
-              onClick={() => setSortKey(s.key)}
-            >
-              {s.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={"filt" + (profitOnly ? " on" : "")}
-            aria-pressed={profitOnly}
-            onClick={() => setProfitOnly((v) => !v)}
-          >
-            เฉพาะที่กำไร
-          </button>
-        </div>
-
-        <div className="flist">
-          {list.map((f) => {
-            const b = bestRow(f);
-            const pos = b.profit >= 0;
-            return (
+    <>
+      <div className="modebar">
+        <div className="moderow">
+          <span className="ctrls-label">วัตถุดิบมาจากไหน</span>
+          <div className="modes" role="group" aria-label="โมเดลต้นทุน">
+            {MODES.map((m) => (
               <button
-                key={f.output}
+                key={m.key}
                 type="button"
-                className={"frow" + (selected === f.output ? " sel" : "")}
-                aria-current={selected === f.output ? "true" : undefined}
-                onClick={() => {
-                  setSelected(f.output);
-                  scrollIntoViewOnNarrow(detailRef.current);
-                }}
+                className={mode === m.key ? "on" : undefined}
+                aria-pressed={mode === m.key}
+                onClick={() => setMode(m.key)}
               >
-                <span className="nm">{f.name}</span>
-                <span className={"pd " + (pos ? "pos" : "neg")}>{fmtc(b.perday)}</span>
-                <span className="rc">
-                  {recipe(f)} → {f.name}
-                </span>
-                <span className="lv">
-                  Lv{b.lv} · {fmtPct(b.pct)}
-                </span>
+                {m.label}
               </button>
-            );
-          })}
-          {list.length === 0 && (
-            <p className="empty">ไม่พบโรงงานที่ตรงกับเงื่อนไข ลองล้างคำค้นหรือปิดตัวกรอง</p>
-          )}
+            ))}
+          </div>
         </div>
+        <p className="modedesc">{activeMode.desc}</p>
       </div>
 
-      <div className="detailcol" ref={detailRef}>
-        <div className="detailbar">
-          <button
-            type="button"
-            className="backbtn"
-            onClick={() => scrollIntoViewOnNarrow(listRef.current)}
-          >
-            ← รายการโรงงาน
-          </button>
-          <span className="detailbar-name">{detail.name}</span>
+      <SummaryTiles costed={costed} />
+
+      <div className="layout">
+        <div className="panel side" ref={listRef}>
+          <div className="phead">
+            <h2>โรงงาน</h2>
+            <span className="count">
+              {list.length}/{FACTORIES.length}
+            </span>
+          </div>
+
+          <div className="search">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="ค้นหาโรงงาน หรือ วัตถุดิบ…"
+              aria-label="ค้นหาโรงงานหรือวัตถุดิบ"
+            />
+          </div>
+
+          <div className="ctrls" role="group" aria-label="เรียงลำดับและกรอง">
+            <span className="ctrls-label">เรียง</span>
+            {SORTS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                className={sortKey === s.key ? "on" : undefined}
+                aria-pressed={sortKey === s.key}
+                onClick={() => setSortKey(s.key)}
+              >
+                {s.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={"filt" + (profitOnly ? " on" : "")}
+              aria-pressed={profitOnly}
+              onClick={() => setProfitOnly((v) => !v)}
+            >
+              เฉพาะที่กำไร
+            </button>
+          </div>
+
+          <div className="flist">
+            {list.map((f) => {
+              const b = bestRow(rowsOf(f));
+              const pos = b.profit >= 0;
+              return (
+                <button
+                  key={f.output}
+                  type="button"
+                  className={"frow" + (selected === f.output ? " sel" : "")}
+                  aria-current={selected === f.output ? "true" : undefined}
+                  onClick={() => {
+                    setSelected(f.output);
+                    scrollIntoViewOnNarrow(detailRef.current);
+                  }}
+                >
+                  <span className="nm">{f.name}</span>
+                  <span className={"pd " + (pos ? "pos" : "neg")}>{fmtc(b.perday)}</span>
+                  <span className="rc">
+                    {recipe(f)} → {f.name}
+                  </span>
+                  <span className="lv">
+                    Lv{b.lv} · {fmtPct(b.pct)}
+                  </span>
+                </button>
+              );
+            })}
+            {list.length === 0 && (
+              <p className="empty">ไม่พบโรงงานที่ตรงกับเงื่อนไข ลองล้างคำค้นหรือปิดตัวกรอง</p>
+            )}
+          </div>
         </div>
-        <FactoryDetail factory={detail} />
+
+        <div className="detailcol" ref={detailRef}>
+          <div className="detailbar">
+            <button
+              type="button"
+              className="backbtn"
+              onClick={() => scrollIntoViewOnNarrow(listRef.current)}
+            >
+              ← รายการโรงงาน
+            </button>
+            <span className="detailbar-name">{detail.name}</span>
+          </div>
+          <FactoryDetail factory={detail} rows={rowsOf(detail)} mode={mode} />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
-function FactoryDetail({ factory }: { factory: Factory }) {
-  const best = bestRow(factory);
-  const bestPct = bestPctRow(factory);
+function FactoryDetail({
+  factory,
+  rows,
+  mode,
+}: {
+  factory: Factory;
+  rows: CostedRow[];
+  mode: CostMode;
+}) {
+  const best = bestRow(rows);
+  const bestPct = bestPctRow(rows);
+  const chain = mode === "market" ? [] : craftChain(factory.output, mode);
 
   return (
     <div className="panel">
@@ -178,6 +239,11 @@ function FactoryDetail({ factory }: { factory: Factory }) {
             %ดีสุด: Lv{bestPct.lv} · {fmtPct(bestPct.pct)}
           </span>
         </div>
+        {chain.length > 0 && (
+          <p className="chaininfo">
+            ต้องมีโรงงานในสายอีก {chain.length} ตัว: {chain.map(itemName).join(" · ")}
+          </p>
+        )}
       </div>
 
       <div className="tblwrap">
@@ -206,10 +272,14 @@ function FactoryDetail({ factory }: { factory: Factory }) {
             </tr>
           </thead>
           <tbody>
-            {factory.rows.map((r) => {
+            {rows.map((r) => {
               const pos = r.profit >= 0;
               const ins =
-                Object.keys(r.inputs).length > 0 ? <Ingredients inputs={r.inputs} /> : "—";
+                Object.keys(r.inputs).length > 0 ? (
+                  <Ingredients inputs={r.inputs} mode={mode} />
+                ) : (
+                  "—"
+                );
               const isBest = r.lv === best.lv;
               return (
                 <Fragment key={r.lv}>
@@ -248,25 +318,40 @@ function FactoryDetail({ factory }: { factory: Factory }) {
 
 /**
  * รายการวัตถุดิบของหนึ่งรอบการผลิต
- * ของพื้นฐาน (Dust / Fire / Water) ไม่มีโรงงานผลิต ต้องใช้ coin ซื้อจากตลาดอย่างเดียว
- * จึงทำเครื่องหมายไว้ให้แยกออกจากของที่คราฟต์เองได้
+ *
+ * ของพื้นฐาน (Dust / Fire / Water) และ Earth ไม่มีทางได้มานอกจากซื้อ จึงขีดเส้นประไว้
+ * ส่วนโหมดที่คราฟต์เองได้จะบอกด้วยว่าชั้นนี้เลือกทำเองหรือซื้อ
  */
-function Ingredients({ inputs }: { inputs: Record<string, number> }) {
+function Ingredients({
+  inputs,
+  mode,
+}: {
+  inputs: Record<string, number>;
+  mode: CostMode;
+}) {
   return (
     <>
-      {Object.entries(inputs).map(([sym, amt], i) => (
-        <span key={sym}>
-          {i > 0 && " + "}
-          {fmt(amt, amt < 10 ? 2 : 0)}{" "}
-          {isBaseItem(sym) ? (
-            <abbr className="base" title="ของพื้นฐาน ไม่มีโรงงานผลิต ต้องซื้อด้วย coin">
-              {itemName(sym)}
-            </abbr>
-          ) : (
-            itemName(sym)
-          )}
-        </span>
-      ))}
+      {Object.entries(inputs).map(([sym, amt], i) => {
+        const crafted = sourcedByCrafting(mode, sym);
+        return (
+          <span key={sym}>
+            {i > 0 && " + "}
+            {fmt(amt, amt < 10 ? 2 : 0)}{" "}
+            {isBaseItem(sym) ? (
+              <abbr className="base" title="ของพื้นฐาน ไม่มีโรงงานผลิต ต้องซื้อด้วย coin">
+                {itemName(sym)}
+              </abbr>
+            ) : (
+              itemName(sym)
+            )}
+            {mode !== "market" && (
+              <span className={"src " + (crafted ? "make" : "buy")}>
+                {crafted ? "ทำเอง" : "ซื้อ"}
+              </span>
+            )}
+          </span>
+        );
+      })}
     </>
   );
 }

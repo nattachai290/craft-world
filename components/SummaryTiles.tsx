@@ -1,17 +1,17 @@
-import { DATA } from "@/lib/data";
+"use client";
+
 import { bestRow, fmtc, fmtPct } from "@/lib/format";
+import type { CostedRow } from "@/lib/cost";
 
-export default function SummaryTiles() {
-  const facs = Object.values(DATA.factories);
-  const profitable = facs.filter((f) => bestRow(f).profit > 0).length;
-
-  const bestPerDay = facs
-    .map(bestRow)
-    .reduce((a, b) => (b.perday > a.perday ? b : a));
+export default function SummaryTiles({ costed }: { costed: Map<string, CostedRow[]> }) {
+  const all = [...costed.values()];
+  const bests = all.map(bestRow);
+  const profitable = bests.filter((r) => r.profit > 0).length;
+  const bestPerDay = bests.reduce((a, b) => (b.perday > a.perday ? b : a));
 
   let bestPct: number | null = null;
-  for (const f of facs) {
-    for (const r of f.rows) {
+  for (const rows of all) {
+    for (const r of rows) {
       if (r.pct != null && (bestPct === null || r.pct > bestPct)) bestPct = r.pct;
     }
   }
@@ -20,11 +20,11 @@ export default function SummaryTiles() {
     <div className="tiles">
       <div className="tile">
         <div className="k">โรงงานทั้งหมด</div>
-        <div className="v">{facs.length}</div>
+        <div className="v">{all.length}</div>
       </div>
       <div className="tile">
         <div className="k">ผลิตขายได้กำไร</div>
-        <div className="v pos">{profitable}</div>
+        <div className={"v " + (profitable > 0 ? "pos" : "neg")}>{profitable}</div>
       </div>
       <div className="tile">
         <div className="k">กำไร/วัน สูงสุด</div>

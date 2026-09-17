@@ -105,6 +105,40 @@ h1 { font-size: clamp(1.35rem, 5vw, 2.2rem); font-weight: 800; letter-spacing: -
 
 .foot { margin-top: 20px; font-size: .75rem; color: var(--muted); text-align: center; }
 
+/* ---------- แถบเลือกโมเดลต้นทุน ---------- */
+
+.modebar {
+  margin-top: 18px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+}
+.moderow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.modes { display: flex; gap: 6px; flex-wrap: wrap; }
+.modes button {
+  font-family: var(--sans); font-size: .82rem; font-weight: 600;
+  border: 1px solid var(--line); background: var(--surface2); color: var(--muted);
+  border-radius: 8px; padding: 8px 12px; min-height: 40px; cursor: pointer;
+}
+.modes button:hover { color: var(--ink); }
+.modes button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.modedesc { margin: 10px 0 0; font-size: .8rem; color: var(--muted); text-wrap: pretty; }
+
+.chaininfo {
+  margin: 10px 0 0; font-size: .76rem; color: var(--muted);
+  font-family: var(--mono); overflow-wrap: anywhere;
+}
+
+/* ป้ายบอกว่าวัตถุดิบชั้นนี้ซื้อหรือทำเอง (เฉพาะโหมดที่คราฟต์เองได้) */
+.src {
+  margin-left: 5px; font-size: .62rem; font-weight: 600; padding: 1px 5px;
+  border-radius: 4px; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap;
+}
+.src.make { background: var(--pos-soft); color: var(--pos); }
+.src.buy { background: var(--surface2); color: var(--muted); }
+
+@media (min-width: 1024px) {
+  .modes button { font-size: .8rem; padding: 6px 10px; min-height: 34px; }
+}
+
 /* ---------- ไทล์สรุป ---------- */
 
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }

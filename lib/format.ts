@@ -1,4 +1,4 @@
-import type { Factory, Row } from "./types";
+import type { Row } from "./types";
 
 /** ย่อตัวเลขใหญ่ให้อ่านออก: 1.2k / 3.40M / 1.88T */
 export function fmt(n: number | null | undefined, d = 1): string {
@@ -38,11 +38,11 @@ export function dur(s: number): string {
 }
 
 /** เลเวลที่กำไรต่อวันดีที่สุด */
-export function bestRow(f: Factory): Row {
-  return f.rows.reduce((a, b) => (b.perday > a.perday ? b : a));
+export function bestRow<T extends Row>(rows: T[]): T {
+  return rows.reduce((a, b) => (b.perday > a.perday ? b : a));
 }
 
 /** เลเวลที่ % กำไรดีที่สุด */
-export function bestPctRow(f: Factory): Row {
-  return f.rows.reduce((a, b) => ((b.pct ?? -Infinity) > (a.pct ?? -Infinity) ? b : a));
+export function bestPctRow<T extends Row>(rows: T[]): T {
+  return rows.reduce((a, b) => ((b.pct ?? -Infinity) > (a.pct ?? -Infinity) ? b : a));
 }
