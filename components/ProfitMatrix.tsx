@@ -3,15 +3,11 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
-import {
-  costRows,
-  craftChain,
-  shoppingList,
-  sourcedByCrafting,
-  type CostedRow,
-} from "@/lib/cost";
+import { costEngine, type CostedRow, type CostEngine } from "@/lib/cost";
+import { usePrices } from "@/lib/usePrices";
 import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct, num } from "@/lib/format";
 import { isBaseItem, itemName } from "@/lib/items";
+import type { PriceTable } from "@/lib/prices";
 import type { CostMode, Factory, SortKey } from "@/lib/types";
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -69,9 +65,12 @@ export default function ProfitMatrix() {
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
+  const { prices, secondsLeft, loading, error, refreshNow } = usePrices(60);
+  const engine = useMemo(() => costEngine(prices), [prices]);
+
   const costed = useMemo(
-    () => new Map(FACTORIES.map((f) => [f.output, costRows(f, mode)] as const)),
-    [mode],
+    () => new Map(FACTORIES.map((f) => [f.output, engine.costRows(f, mode)] as const)),
+    [mode, engine],
   );
   const rowsOf = (f: Factory) => costed.get(f.output) ?? [];
 
@@ -91,11 +90,20 @@ export default function ProfitMatrix() {
     return out.sort((a, b) => score(b) - score(a));
   }, [sortKey, profitOnly, query, costed]);
 
+
   const detail = DATA.factories[selected] ?? list[0] ?? FACTORIES[0];
   const activeMode = MODES.find((m) => m.key === mode)!;
 
   return (
     <>
+      <PriceStatus
+        prices={prices}
+        secondsLeft={secondsLeft}
+        loading={loading}
+        error={error}
+        onRefresh={refreshNow}
+      />
+
       <div className="modebar">
         <div className="moderow">
           <span className="ctrls-label">วัตถุดิบมาจากไหน</span>
@@ -208,6 +216,7 @@ export default function ProfitMatrix() {
             factory={detail}
             rows={rowsOf(detail)}
             mode={mode}
+            engine={engine}
           />
         </div>
       </div>
@@ -219,14 +228,16 @@ function FactoryDetail({
   factory,
   rows,
   mode,
+  engine,
 }: {
   factory: Factory;
   rows: CostedRow[];
   mode: CostMode;
+  engine: CostEngine;
 }) {
   const best = bestRow(rows);
   const bestPct = bestPctRow(rows);
-  const chain = mode === "market" ? [] : craftChain(factory.output, mode);
+  const chain = mode === "market" ? [] : engine.craftChain(factory.output, mode);
 
   // แถวที่กางรายการซื้อให้ดู เริ่มที่เลเวลกำไรดีสุด กดแถวอื่นเพื่อเปลี่ยนได้
   const [pickedLv, setPickedLv] = useState(best.lv);
@@ -261,7 +272,7 @@ function FactoryDetail({
         )}
       </div>
 
-      <BuyList row={picked} mode={mode} />
+      <BuyList row={picked} mode={mode} engine={engine} />
 
       <div className="tblwrap">
         <table>
@@ -293,7 +304,7 @@ function FactoryDetail({
               const pos = r.profit >= 0;
               const ins =
                 Object.keys(r.inputs).length > 0 ? (
-                  <Ingredients inputs={r.inputs} mode={mode} />
+                  <Ingredients inputs={r.inputs} mode={mode} engine={engine} />
                 ) : (
                   "—"
                 );
@@ -351,14 +362,16 @@ function FactoryDetail({
 function Ingredients({
   inputs,
   mode,
+  engine,
 }: {
   inputs: Record<string, number>;
   mode: CostMode;
+  engine: CostEngine;
 }) {
   return (
     <>
       {Object.entries(inputs).map(([sym, amt], i) => {
-        const crafted = sourcedByCrafting(mode, sym);
+        const crafted = engine.sourcedByCrafting(mode, sym);
         return (
           <span key={sym}>
             {i > 0 && " + "}
@@ -388,8 +401,16 @@ function Ingredients({
  * โหมด market คือวัตถุดิบชั้นถัดไปตรง ๆ ส่วนอีกสองโหมดกางสายลงไปจนถึงชั้นที่เลือกซื้อ
  * ผลรวมจึงเท่ากับต้นทุนของแถวนั้นเสมอ
  */
-function BuyList({ row, mode }: { row: CostedRow; mode: CostMode }) {
-  const purchases = shoppingList(row, mode);
+function BuyList({
+  row,
+  mode,
+  engine,
+}: {
+  row: CostedRow;
+  mode: CostMode;
+  engine: CostEngine;
+}) {
+  const purchases = engine.shoppingList(row, mode);
 
   return (
     <section className="buypanel" aria-label="รายการที่ต้องซื้อ">
@@ -453,6 +474,59 @@ function BuyList({ row, mode }: { row: CostedRow; mode: CostMode }) {
             </tfoot>
           </table>
         </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * แถบสถานะราคา: อัปเดตล่าสุดเมื่อไหร่ สดหรือ snapshot และอีกกี่วินาทีจะดึงใหม่
+ *
+ * ค่าเริ่มต้นของตัวนับเท่ากับช่วงเต็มทั้งฝั่ง server และ client จึง hydrate ได้ตรงกัน
+ */
+function PriceStatus({
+  prices,
+  secondsLeft,
+  loading,
+  error,
+  onRefresh,
+  intervalSec = 60,
+}: {
+  prices: PriceTable;
+  secondsLeft: number;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  intervalSec?: number;
+}) {
+  const live = prices.source === "live";
+  const pctLeft = Math.max(0, Math.min(100, (secondsLeft / intervalSec) * 100));
+
+  return (
+    <section className="pricebar" aria-label="สถานะราคา">
+      <div className="pricerow">
+        <span className={"livedot " + (live ? "on" : "off")} aria-hidden="true" />
+        <span className="pricelabel">
+          ราคาอัปเดต <b>{prices.tsLocal}</b>
+        </span>
+        <span className={"srcbadge " + (live ? "live" : "snap")}>
+          {live ? "สด" : "snapshot"}
+        </span>
+
+        <span className="countdown" role="status" aria-live="off">
+          {loading ? "กำลังดึงราคา…" : `รีเฟรชอีก ${secondsLeft} วิ`}
+        </span>
+        <button type="button" className="refreshbtn" onClick={onRefresh} disabled={loading}>
+          รีเฟรชเดี๋ยวนี้
+        </button>
+      </div>
+
+      <div className="countbar" aria-hidden="true">
+        <span style={{ width: `${pctLeft}%` }} />
+      </div>
+
+      {(error || prices.note) && (
+        <p className="pricenote">{error ? `ดึงราคาไม่สำเร็จ (${error}) — ยังใช้ราคาชุดเดิมอยู่` : prices.note}</p>
       )}
     </section>
   );

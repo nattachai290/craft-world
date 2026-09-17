@@ -1,5 +1,4 @@
 import ProfitMatrix from "@/components/ProfitMatrix";
-import { DATA } from "@/lib/data";
 import { BASE_ITEM_NAMES } from "@/lib/items";
 
 export default function Home() {
@@ -10,9 +9,7 @@ export default function Home() {
         <p className="sub">
           ซื้อวัตถุดิบจากตลาด → ผลิต → ขายผลผลิต · คุ้มไหม เลเวลไหนดีสุด (ทุกโรงงาน Lv.1→max)
         </p>
-        <p className="stamp">
-          ราคา snapshot: <b>{DATA.tsLocal}</b> · เรทจาก craft-world.gg swap
-        </p>
+        <p className="stamp">เรทซื้อ/ขายจาก craft-world.gg swap</p>
       </header>
 
       <ProfitMatrix />
@@ -36,8 +33,7 @@ export default function Home() {
         <b>ข้อจำกัด:</b> กำไร/วัน คิดจากรอบของโรงงานเป้าหมายอย่างเดียว
         โหมดที่คราฟต์เองจึงยังไม่ได้หักเวลาที่สายป้อนต้องใช้ (ของจริงจะช้ากว่านี้
         และต้องลงทุนสร้างกับอัปเลเวลโรงงานทั้งสายก่อน) · ยังไม่รวม price impact
-        เวลาซื้อ/ขายจำนวนมาก (pool ตื้น ราคาจริงจะแย่กว่านี้) และค่า power · ราคาเป็น snapshot
-        อาจเปลี่ยนแล้ว · ทรัพยากรที่ pool แทบไม่มีสภาพคล่อง (เช่น Screws) ราคาซื้อจะสูงผิดปกติ
+        เวลาซื้อ/ขายจำนวนมาก (pool ตื้น ราคาจริงจะแย่กว่านี้) และค่า power · ทรัพยากรที่ pool แทบไม่มีสภาพคล่อง (เช่น Screws) ราคาซื้อจะสูงผิดปกติ
         โหมดซื้อวัตถุดิบจึงติดลบมหาศาล ส่วนอีกสองโหมดจะเลี่ยงไปคราฟต์เองให้เอง
       </div>
 
