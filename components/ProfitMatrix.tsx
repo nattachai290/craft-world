@@ -3,7 +3,8 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
-import { costEngine, type CostedRow, type CostEngine } from "@/lib/cost";
+import { costEngine, isPurchasedOnly, type CostedRow, type CostEngine } from "@/lib/cost";
+import { SNAPSHOT } from "@/lib/prices";
 import { usePrices } from "@/lib/usePrices";
 import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct, num } from "@/lib/format";
 import { isBaseItem, itemName } from "@/lib/items";
@@ -34,7 +35,26 @@ const MODES: { key: CostMode; label: string; desc: string }[] = [
   },
 ];
 
-const FACTORIES = Object.values(DATA.factories);
+/**
+ * โรงงานที่เอามาเทียบกำไรได้จริง
+ *
+ * ตัดเหมือง (Earth) ออก เพราะมันไม่ได้ซื้อวัตถุดิบมาแปรรูป ต้นทุนวัตถุดิบเลยเป็น 0
+ * ทำให้ขึ้นเป็นอันดับหนึ่งเสมอและ % กำไรไม่มีความหมาย — ที่จริงมันคือการขุดขาย
+ * ไม่ใช่การคราฟต์ Earth ยังคิดราคาซื้อตามปกติตอนถูกใช้เป็นวัตถุดิบของโรงงานอื่น
+ */
+const FACTORIES = Object.values(DATA.factories).filter((f) => !isPurchasedOnly(f.output));
+
+/**
+ * โรงงานที่เปิดมาเจอเป็นตัวแรก — กำไรต่อวันดีสุดตามราคา snapshot ในโหมดเริ่มต้น
+ * คิดครั้งเดียวตอนโหลดโมดูล ค่าจึงเท่ากันทั้งฝั่ง server และ client
+ */
+const DEFAULT_FACTORY = FACTORIES.reduce((a, b) => {
+  const engine = costEngine(SNAPSHOT);
+  return bestRow(engine.costRows(b, "market")).perday >
+    bestRow(engine.costRows(a, "market")).perday
+    ? b
+    : a;
+}).output;
 
 function recipe(f: Factory): string {
   return f.inputNames.join(" + ") || "เหมือง";
@@ -60,7 +80,7 @@ export default function ProfitMatrix() {
   const [sortKey, setSortKey] = useState<SortKey>("perday");
   const [profitOnly, setProfitOnly] = useState(false);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string>("EARTH");
+  const [selected, setSelected] = useState<string>(DEFAULT_FACTORY);
 
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -91,7 +111,8 @@ export default function ProfitMatrix() {
   }, [sortKey, profitOnly, query, costed]);
 
 
-  const detail = DATA.factories[selected] ?? list[0] ?? FACTORIES[0];
+  const detail =
+    FACTORIES.find((f) => f.output === selected) ?? list[0] ?? FACTORIES[0];
   const activeMode = MODES.find((m) => m.key === mode)!;
 
   return (
