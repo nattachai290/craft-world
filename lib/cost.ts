@@ -41,15 +41,6 @@ export type CostedRow = Row & {
   perday: number;
 };
 
-/** ทางที่โมเดลเลือกสำหรับวัตถุดิบหนึ่งตัว พร้อมตัวเลขสองฝั่งที่ใช้ตัดสิน */
-type Sourcing = {
-  crafted: boolean;
-  /** ราคาซื้อจากตลาดต่อชิ้น */
-  market: number;
-  /** ต้นทุนถ้าคราฟต์เองต่อชิ้น (Infinity เมื่อไม่มีโรงงานผลิต) */
-  craft: number;
-};
-
 export type CostEngine = {
   prices: PriceTable;
   unitCost(mode: CostMode, sym: string): number;
@@ -88,60 +79,62 @@ function createEngine(prices: PriceTable): CostEngine {
   const buy = prices.buy;
   const sell = prices.sell;
 
-  /** ต้นทุนต่อหน่วยของทุกไอเทมภายใต้โมเดลหนึ่ง (กราฟสูตรเป็น DAG จึงไม่วน) */
-  const buildUnitCosts = (mode: CostMode): Record<string, number> => {
-    const memo: Record<string, number> = {};
+  /**
+   * ต้นทุนต่อหน่วยของทุกไอเทมภายใต้โมเดลหนึ่ง (กราฟสูตรเป็น DAG จึงไม่วน)
+   *
+   * เก็บไว้สามอย่างในรอบเดียว: ต้นทุนที่ใช้จริง (unit), ต้นทุนถ้าคราฟต์เอง (craft)
+   * และเลเวลที่คราฟต์ได้ถูกที่สุด (row) — การตัดสินซื้อ/ทำเอง รายการซื้อ และสายโรงงาน
+   * อ่านจากตารางนี้หมด จะได้ไม่ต้องคำนวณซ้ำทุกครั้งที่ render
+   */
+  const buildModel = (mode: CostMode) => {
+    const unitMemo: Record<string, number> = {};
+    const craftMemo: Record<string, number> = {};
+    const rowMemo: Record<string, Row | null> = {};
     const visiting = new Set<string>();
 
     const unit = (sym: string): number => {
-      if (sym in memo) return memo[sym];
+      if (sym in unitMemo) return unitMemo[sym];
 
       const market = buy[sym] ?? Infinity;
-      if (mode === "market" || isPurchasedOnly(sym)) return (memo[sym] = market);
+      if (mode === "market" || isPurchasedOnly(sym)) return (unitMemo[sym] = market);
 
       if (visiting.has(sym)) return Infinity;
       visiting.add(sym);
-      const craft = cheapestCraftCost(DATA.factories[sym], unit);
+      const best = cheapestCraftRow(DATA.factories[sym], unit);
       visiting.delete(sym);
 
-      return (memo[sym] = mode === "mixed" ? Math.min(market, craft) : craft);
+      const craft = best?.unitCost ?? Infinity;
+      craftMemo[sym] = craft;
+      rowMemo[sym] = best?.row ?? null;
+      return (unitMemo[sym] = mode === "mixed" ? Math.min(market, craft) : craft);
     };
 
     for (const sym of Object.keys(buy)) unit(sym);
     for (const sym of Object.keys(DATA.factories)) unit(sym);
-    return memo;
+    return { unit: unitMemo, craft: craftMemo, row: rowMemo };
   };
 
-  const cheapestCraftCost = (f: Factory, unit: (sym: string) => number): number =>
-    cheapestCraftRow(f, unit)?.unitCost ?? Infinity;
-
-  const table: Record<CostMode, Record<string, number>> = {
-    market: buildUnitCosts("market"),
-    chain: buildUnitCosts("chain"),
-    mixed: buildUnitCosts("mixed"),
+  const model: Record<CostMode, ReturnType<typeof buildModel>> = {
+    market: buildModel("market"),
+    chain: buildModel("chain"),
+    mixed: buildModel("mixed"),
   };
 
-  const unitCost = (mode: CostMode, sym: string) => table[mode][sym] ?? Infinity;
+  const unitCost = (mode: CostMode, sym: string) => model[mode].unit[sym] ?? Infinity;
 
   /**
-   * ตัดสินว่าวัตถุดิบตัวนี้จะซื้อหรือทำเอง พร้อมตัวเลขสองฝั่งที่ใช้เทียบ
-   * ไม่มีการตรึงไว้ล่วงหน้า — เทียบราคาซื้อปัจจุบันกับต้นทุนคราฟต์ที่ถูกที่สุดทุกครั้ง
+   * วัตถุดิบตัวนี้คราฟต์เองหรือซื้อ
+   * ไม่มีการตรึงไว้ล่วงหน้า — เทียบราคาซื้อปัจจุบันกับต้นทุนคราฟต์ที่ถูกที่สุดเสมอ
    */
-  const sourcing = (mode: CostMode, sym: string): Sourcing => {
-    const market = buy[sym] ?? Infinity;
-    if (isPurchasedOnly(sym)) return { crafted: false, market, craft: Infinity };
-
-    const craft = cheapestCraftCost(DATA.factories[sym], (s) => unitCost(mode, s));
-    if (mode === "market") return { crafted: false, market, craft };
-    if (mode === "chain") return { crafted: true, market, craft };
-    return { crafted: craft < market, market, craft };
+  const sourcedByCrafting = (mode: CostMode, sym: string): boolean => {
+    if (mode === "market" || isPurchasedOnly(sym)) return false;
+    if (mode === "chain") return true;
+    return (model.mixed.craft[sym] ?? Infinity) < (buy[sym] ?? Infinity);
   };
 
-  const sourcedByCrafting = (mode: CostMode, sym: string): boolean =>
-    sourcing(mode, sym).crafted;
-
-  const cheapestRowFor = (mode: CostMode, sym: string) =>
-    cheapestCraftRow(DATA.factories[sym], (s) => unitCost(mode, s));
+  /** เลเวลที่คราฟต์ได้ถูกที่สุด ใช้กางรายการซื้อกับสายโรงงาน */
+  const cheapestRowFor = (mode: CostMode, sym: string): Row | null =>
+    model[mode].row[sym] ?? null;
 
   return {
     prices,
@@ -184,8 +177,8 @@ function createEngine(prices: PriceTable): CostEngine {
           qtyBySym.set(sym, (qtyBySym.get(sym) ?? 0) + qty);
           return;
         }
-        for (const [s, q] of Object.entries(best.row.inputs)) {
-          add(s, (qty * q) / best.row.out, depth + 1);
+        for (const [s, q] of Object.entries(best.inputs)) {
+          add(s, (qty * q) / best.out, depth + 1);
         }
       };
 
@@ -206,7 +199,7 @@ function createEngine(prices: PriceTable): CostEngine {
         if (seen.has(s) || !sourcedByCrafting(mode, s)) return;
         seen.add(s);
         const best = cheapestRowFor(mode, s);
-        if (best) for (const input of Object.keys(best.row.inputs)) walk(input);
+        if (best) for (const input of Object.keys(best.inputs)) walk(input);
       };
       const f = DATA.factories[sym];
       if (f) for (const r of f.rows) for (const input of Object.keys(r.inputs)) walk(input);

@@ -12,6 +12,8 @@ const CACHE_MS = 30_000;
 
 let cached: { at: number; table: PriceTable } | null = null;
 let inFlight: Promise<PriceTable> | null = null;
+/** ราคาสดชุดล่าสุดที่ดึงสำเร็จ ใช้แทน snapshot ตอนต้นทางล่มชั่วคราว */
+let lastLive: PriceTable | null = null;
 
 /**
  * ราคาปัจจุบัน
@@ -38,14 +40,16 @@ async function load(): Promise<PriceTable> {
     const quotes = await fetchQuotes(endpoint, AbortSignal.timeout(TIMEOUT_MS));
     const table = parsePriceFeed(quotes);
     cached = { at: Date.now(), table };
+    lastLive = table;
     return table;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    const table: PriceTable = {
-      ...SNAPSHOT,
-      note: `ดึงราคาสดจาก ${endpoint} ไม่สำเร็จ (${reason}) จึงใช้ราคา snapshot`,
-    };
-    // แคช snapshot ไว้สั้น ๆ เหมือนกัน จะได้ไม่รัวยิงซ้ำตอนต้นทางล่ม
+    // ต้นทางพลาดชั่วคราวไม่ควรทำให้ถอยกลับไปราคา snapshot ตอน build
+    // ถ้าเคยดึงสดได้ ให้ตอบชุดล่าสุดนั้นพร้อมบอกว่ามันค้างมาจากเวลาไหน
+    const table: PriceTable = lastLive
+      ? { ...lastLive, reason, note: `ดึงราคาสดไม่สำเร็จ (${reason}) ยังแสดงราคาสดชุดล่าสุดอยู่` }
+      : { ...SNAPSHOT, reason, note: `ดึงราคาสดจาก ${endpoint} ไม่สำเร็จ (${reason}) จึงใช้ราคา snapshot` };
+    // แคชผลล้มเหลวไว้สั้น ๆ จะได้ไม่รัวยิงซ้ำตอนต้นทางล่ม
     cached = { at: Date.now(), table };
     return table;
   }

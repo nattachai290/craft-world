@@ -96,10 +96,12 @@ async function runAll(
   signal: AbortSignal,
   batchSize: number,
 ): Promise<Map<string, number>> {
+  // ก้อนในรอบเดียวกันไม่ขึ้นต่อกัน ยิงพร้อมกันได้ เวลารวมจะได้ไม่ชน timeout ง่าย ๆ
+  const results = await Promise.all(
+    chunk(specs, batchSize).map((batch) => runQuotes(endpoint, batch, signal)),
+  );
   const merged = new Map<string, number>();
-  for (const batch of chunk(specs, batchSize)) {
-    for (const [k, v] of await runQuotes(endpoint, batch, signal)) merged.set(k, v);
-  }
+  for (const r of results) for (const [k, v] of r) merged.set(k, v);
   return merged;
 }
 

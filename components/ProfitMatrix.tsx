@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
 import { costEngine, isPurchasedOnly, type CostedRow, type CostEngine } from "@/lib/cost";
@@ -44,20 +44,24 @@ const MODES: { key: CostMode; label: string; desc: string }[] = [
  */
 const FACTORIES = Object.values(DATA.factories).filter((f) => !isPurchasedOnly(f.output));
 
+/** ดึงราคาใหม่ทุกกี่วินาที */
+const REFRESH_SEC = 60;
+
 /**
  * โรงงานที่เปิดมาเจอเป็นตัวแรก — กำไรต่อวันดีสุดตามราคา snapshot ในโหมดเริ่มต้น
  * คิดครั้งเดียวตอนโหลดโมดูล ค่าจึงเท่ากันทั้งฝั่ง server และ client
  */
-const DEFAULT_FACTORY = FACTORIES.reduce((a, b) => {
+const DEFAULT_FACTORY = (() => {
   const engine = costEngine(SNAPSHOT);
-  return bestRow(engine.costRows(b, "market")).perday >
-    bestRow(engine.costRows(a, "market")).perday
-    ? b
-    : a;
-}).output;
+  const scored = FACTORIES.map((f) => ({
+    output: f.output,
+    perday: bestRow(engine.costRows(f, "market")).perday,
+  }));
+  return scored.reduce((a, b) => (b.perday > a.perday ? b : a)).output;
+})();
 
 function recipe(f: Factory): string {
-  return f.inputNames.join(" + ") || "เหมือง";
+  return f.inputNames.join(" + ");
 }
 
 /** ค้นได้ทั้งชื่อโรงงานและชื่อวัตถุดิบที่มันใช้ */
@@ -85,7 +89,7 @@ export default function ProfitMatrix() {
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
-  const { prices, secondsLeft, loading, error, refreshNow } = usePrices(60);
+  const { prices, nextAt, intervalSec, loading, error, refreshNow } = usePrices(REFRESH_SEC);
   const engine = useMemo(() => costEngine(prices), [prices]);
 
   const costed = useMemo(
@@ -119,7 +123,8 @@ export default function ProfitMatrix() {
     <>
       <PriceStatus
         prices={prices}
-        secondsLeft={secondsLeft}
+        nextAt={nextAt}
+        intervalSec={intervalSec}
         loading={loading}
         error={error}
         onRefresh={refreshNow}
@@ -260,8 +265,9 @@ function FactoryDetail({
   const bestPct = bestPctRow(rows);
   const chain = mode === "market" ? [] : engine.craftChain(factory.output, mode);
 
-  // แถวที่กางรายการซื้อให้ดู เริ่มที่เลเวลกำไรดีสุด กดแถวอื่นเพื่อเปลี่ยนได้
-  const [pickedLv, setPickedLv] = useState(best.lv);
+  // แถวที่กางรายการซื้อให้ดู — null คือยังไม่ได้เลือกเอง ให้ตามเลเวลกำไรดีสุด
+  // ซึ่งเปลี่ยนได้ทุกรอบที่ราคารีเฟรช ถ้าเก็บเลขเลเวลไว้ตั้งแต่แรกจะค้างอยู่ที่ของราคาชุดแรก
+  const [pickedLv, setPickedLv] = useState<number | null>(null);
   const picked = rows.find((r) => r.lv === pickedLv) ?? best;
 
   return (
@@ -271,7 +277,7 @@ function FactoryDetail({
           {factory.name} <span>โรงงาน</span>
         </h2>
         <div className="rt">
-          สูตร: <b>{factory.inputNames.join(" + ") || "ไม่มี (เหมือง)"}</b> → {factory.name} ·
+          สูตร: <b>{recipe(factory)}</b> → {factory.name} ·
           สูงสุด Lv{factory.maxlv}
         </div>
         <div className="best">
@@ -331,7 +337,7 @@ function FactoryDetail({
                 );
               const isBest = r.lv === best.lv;
               const cls =
-                (isBest ? "bestrow" : "") + (r.lv === pickedLv ? " lvsel" : "");
+                (isBest ? "bestrow" : "") + (r.lv === picked.lv ? " lvsel" : "");
               return (
                 <Fragment key={r.lv}>
                   <tr className={cls || undefined} onClick={() => setPickedLv(r.lv)}>
@@ -339,7 +345,7 @@ function FactoryDetail({
                       <button
                         type="button"
                         className="lvnum lvbtn"
-                        aria-pressed={r.lv === pickedLv}
+                        aria-pressed={r.lv === picked.lv}
                         onClick={() => setPickedLv(r.lv)}
                       >
                         Lv{r.lv}
@@ -377,7 +383,7 @@ function FactoryDetail({
 /**
  * รายการวัตถุดิบของหนึ่งรอบการผลิต
  *
- * ของพื้นฐาน (Dust / Fire / Water) และ Earth ไม่มีทางได้มานอกจากซื้อ จึงขีดเส้นประไว้
+ * ของพื้นฐาน (Dust / Fire / Water) ไม่มีโรงงานผลิต ได้มาทางเดียวคือซื้อ จึงขีดเส้นประไว้
  * ส่วนโหมดที่คราฟต์เองได้จะบอกด้วยว่าชั้นนี้เลือกทำเองหรือซื้อ
  */
 function Ingredients({
@@ -442,60 +448,56 @@ function BuyList({
         </span>
       </div>
 
-      {purchases.length === 0 ? (
-        <p className="empty">ไม่ต้องซื้ออะไร — เป็นเหมือง ขุดได้เอง</p>
-      ) : (
-        <div className="tblwrap">
-          <table className="buylist">
-            <thead>
-              <tr>
-                <th scope="col">ซื้อ</th>
-                <th scope="col">จำนวน</th>
-                <th scope="col">ราคา/หน่วย</th>
-                <th scope="col">รวม</th>
+      <div className="tblwrap">
+        <table className="buylist">
+          <thead>
+            <tr>
+              <th scope="col">ซื้อ</th>
+              <th scope="col">จำนวน</th>
+              <th scope="col">ราคา/หน่วย</th>
+              <th scope="col">รวม</th>
+            </tr>
+          </thead>
+          <tbody>
+            {purchases.map((p) => (
+              <tr key={p.sym}>
+                <th scope="row">
+                  {isBaseItem(p.sym) ? (
+                    <abbr
+                      className="base"
+                      title="ของพื้นฐาน ไม่มีโรงงานผลิต ต้องซื้อด้วย coin"
+                    >
+                      {itemName(p.sym)}
+                    </abbr>
+                  ) : (
+                    itemName(p.sym)
+                  )}
+                </th>
+                <td>{num(p.qty)}</td>
+                <td>{num(p.unitPrice, p.unitPrice < 1 ? 6 : 2)}</td>
+                <td>{num(p.subtotal)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {purchases.map((p) => (
-                <tr key={p.sym}>
-                  <th scope="row">
-                    {isBaseItem(p.sym) ? (
-                      <abbr
-                        className="base"
-                        title="ของพื้นฐาน ไม่มีโรงงานผลิต ต้องซื้อด้วย coin"
-                      >
-                        {itemName(p.sym)}
-                      </abbr>
-                    ) : (
-                      itemName(p.sym)
-                    )}
-                  </th>
-                  <td>{num(p.qty)}</td>
-                  <td>{num(p.unitPrice, p.unitPrice < 1 ? 6 : 2)}</td>
-                  <td>{num(p.subtotal)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row">รวมต้นทุน</th>
-                <td colSpan={2} />
-                <td>{num(row.cost)}</td>
-              </tr>
-              <tr>
-                <th scope="row">ขายได้</th>
-                <td colSpan={2} />
-                <td>{num(row.rev)}</td>
-              </tr>
-              <tr className={row.profit >= 0 ? "pos" : "neg"}>
-                <th scope="row">กำไร/รอบ</th>
-                <td colSpan={2}>{fmtPct(row.pct)}</td>
-                <td>{fmtc(row.profit)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row">รวมต้นทุน</th>
+              <td colSpan={2} />
+              <td>{num(row.cost)}</td>
+            </tr>
+            <tr>
+              <th scope="row">ขายได้</th>
+              <td colSpan={2} />
+              <td>{num(row.rev)}</td>
+            </tr>
+            <tr className={row.profit >= 0 ? "pos" : "neg"}>
+              <th scope="row">กำไร/รอบ</th>
+              <td colSpan={2}>{fmtPct(row.pct)}</td>
+              <td>{fmtc(row.profit)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </section>
   );
 }
@@ -507,19 +509,32 @@ function BuyList({
  */
 function PriceStatus({
   prices,
-  secondsLeft,
+  nextAt,
+  intervalSec,
   loading,
   error,
   onRefresh,
-  intervalSec = 60,
 }: {
   prices: PriceTable;
-  secondsLeft: number;
+  nextAt: number;
+  intervalSec: number;
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
-  intervalSec?: number;
 }) {
+  // นาฬิกาของแถบนี้เอง — ทั้งหน้าไม่ต้อง render ใหม่ทุกวินาทีตามไปด้วย
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // ก่อนรอบแรกจบ (และตอน SSR) แสดงช่วงเต็ม ค่าจึงตรงกันทั้งสองฝั่ง
+  const secondsLeft =
+    nextAt === 0 || now === 0
+      ? intervalSec
+      : Math.max(0, Math.min(intervalSec, Math.ceil((nextAt - now) / 1000)));
+
   const live = prices.source === "live";
   const pctLeft = Math.max(0, Math.min(100, (secondsLeft / intervalSec) * 100));
 

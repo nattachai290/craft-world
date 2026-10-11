@@ -10,8 +10,10 @@ export type PriceTable = {
   sell: Record<string, number>;
   /** live = ดึงสดจากต้นทาง · snapshot = ไฟล์ที่ติดมากับ build */
   source: "live" | "snapshot";
-  /** เหตุผลที่ตกกลับไปใช้ snapshot ถ้ามี */
+  /** ข้อความสำหรับแสดงบนหน้า เมื่อชุดนี้ไม่ใช่ราคาสดที่เพิ่งดึงได้ */
   note?: string;
+  /** สาเหตุดิบที่ดึงราคาสดไม่สำเร็จ (เช่น "ต้นทางตอบ HTTP 503") */
+  reason?: string;
 };
 
 /** ราคาที่ติดมากับ build ใช้ตอน SSR และตอนที่ดึงสดไม่ได้ */
