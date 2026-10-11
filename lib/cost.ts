@@ -42,7 +42,7 @@ export type CostedRow = Row & {
 };
 
 /** ทางที่โมเดลเลือกสำหรับวัตถุดิบหนึ่งตัว พร้อมตัวเลขสองฝั่งที่ใช้ตัดสิน */
-export type Sourcing = {
+type Sourcing = {
   crafted: boolean;
   /** ราคาซื้อจากตลาดต่อชิ้น */
   market: number;
@@ -53,7 +53,6 @@ export type Sourcing = {
 export type CostEngine = {
   prices: PriceTable;
   unitCost(mode: CostMode, sym: string): number;
-  sourcing(mode: CostMode, sym: string): Sourcing;
   sourcedByCrafting(mode: CostMode, sym: string): boolean;
   costRows(f: Factory, mode: CostMode): CostedRow[];
   shoppingList(row: Row, mode: CostMode): Purchase[];
@@ -147,7 +146,6 @@ function createEngine(prices: PriceTable): CostEngine {
   return {
     prices,
     unitCost,
-    sourcing,
     sourcedByCrafting,
 
     costRows(f, mode) {
