@@ -52,9 +52,15 @@ jobs:
 
       - run: npm ci
 
-      # ล้มงานเมื่อเจอช่องโหว่ระดับ high ขึ้นไป (moderate/low แค่รายงานไว้ในสรุป)
-      - name: Audit production & dev dependencies
-        run: npm audit --audit-level=high
+      # ของที่ขึ้น production จริง: ล้มงานตั้งแต่ระดับ high
+      - name: Audit production dependencies (high+)
+        run: npm audit --omit=dev --audit-level=high
+
+      # dev tooling ไม่ถูก deploy และบางครั้งต้นทางยังไม่มีเวอร์ชันแก้ให้
+      # (เช่น braces ← micromatch ← fast-glob ← eslint-config-next ที่ช่องโหว่ครอบทุกเวอร์ชัน)
+      # จึงล้มงานเฉพาะระดับ critical ส่วนระดับอื่นดูได้ในสรุปของ job
+      - name: Audit all dependencies (critical)
+        run: npm audit --audit-level=critical
 
       - name: Report full audit to job summary
         if: always()

@@ -106,8 +106,10 @@ Earth เป็นเหมืองที่ขุดเองได้ แต�
 `.github/workflows/ci.yml` รันบน push เข้า `main`, ทุก pull request และตามกำหนดทุกสัปดาห์
 
 - **build** — `npm run lint`, `npm run typecheck`, `npm run build`
-- **audit** — `npm audit --audit-level=high` (ล้มงานเมื่อเจอช่องโหว่ระดับ high ขึ้นไป)
-  พร้อมแนบผลเต็มไว้ใน job summary
+- **audit** — สองชั้น: dependency ที่ขึ้น production ล้มงานตั้งแต่ระดับ high
+  (`npm audit --omit=dev --audit-level=high`) ส่วนทุก dependency รวม dev tooling ล้มงานที่ระดับ critical
+  (`npm audit --audit-level=critical`) เพราะ dev tooling ไม่ถูก deploy และบางตัวต้นทางยังไม่มีเวอร์ชันแก้
+  ผลเต็มทุกระดับแนบไว้ใน job summary เสมอ
 
 ## Deploy
 
