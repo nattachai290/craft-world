@@ -41,9 +41,19 @@ export type CostedRow = Row & {
   perday: number;
 };
 
+/** ทางที่โมเดลเลือกสำหรับวัตถุดิบหนึ่งตัว พร้อมตัวเลขสองฝั่งที่ใช้ตัดสิน */
+export type Sourcing = {
+  crafted: boolean;
+  /** ราคาซื้อจากตลาดต่อชิ้น */
+  market: number;
+  /** ต้นทุนถ้าคราฟต์เองต่อชิ้น (Infinity เมื่อไม่มีโรงงานผลิต) */
+  craft: number;
+};
+
 export type CostEngine = {
   prices: PriceTable;
   unitCost(mode: CostMode, sym: string): number;
+  sourcing(mode: CostMode, sym: string): Sourcing;
   sourcedByCrafting(mode: CostMode, sym: string): boolean;
   costRows(f: Factory, mode: CostMode): CostedRow[];
   shoppingList(row: Row, mode: CostMode): Purchase[];
@@ -114,12 +124,22 @@ function createEngine(prices: PriceTable): CostEngine {
 
   const unitCost = (mode: CostMode, sym: string) => table[mode][sym] ?? Infinity;
 
-  const sourcedByCrafting = (mode: CostMode, sym: string): boolean => {
-    if (mode === "market" || isPurchasedOnly(sym)) return false;
-    if (mode === "chain") return true;
-    const craft = cheapestCraftCost(DATA.factories[sym], (s) => unitCost("mixed", s));
-    return craft < (buy[sym] ?? Infinity);
+  /**
+   * ตัดสินว่าวัตถุดิบตัวนี้จะซื้อหรือทำเอง พร้อมตัวเลขสองฝั่งที่ใช้เทียบ
+   * ไม่มีการตรึงไว้ล่วงหน้า — เทียบราคาซื้อปัจจุบันกับต้นทุนคราฟต์ที่ถูกที่สุดทุกครั้ง
+   */
+  const sourcing = (mode: CostMode, sym: string): Sourcing => {
+    const market = buy[sym] ?? Infinity;
+    if (isPurchasedOnly(sym)) return { crafted: false, market, craft: Infinity };
+
+    const craft = cheapestCraftCost(DATA.factories[sym], (s) => unitCost(mode, s));
+    if (mode === "market") return { crafted: false, market, craft };
+    if (mode === "chain") return { crafted: true, market, craft };
+    return { crafted: craft < market, market, craft };
   };
+
+  const sourcedByCrafting = (mode: CostMode, sym: string): boolean =>
+    sourcing(mode, sym).crafted;
 
   const cheapestRowFor = (mode: CostMode, sym: string) =>
     cheapestCraftRow(DATA.factories[sym], (s) => unitCost(mode, s));
@@ -127,6 +147,7 @@ function createEngine(prices: PriceTable): CostEngine {
   return {
     prices,
     unitCost,
+    sourcing,
     sourcedByCrafting,
 
     costRows(f, mode) {

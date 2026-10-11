@@ -3,7 +3,13 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
-import { costEngine, isPurchasedOnly, type CostedRow, type CostEngine } from "@/lib/cost";
+import {
+  costEngine,
+  isPurchasedOnly,
+  type CostedRow,
+  type CostEngine,
+  type Sourcing,
+} from "@/lib/cost";
 import { SNAPSHOT } from "@/lib/prices";
 import { usePrices } from "@/lib/usePrices";
 import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct, num } from "@/lib/format";
@@ -392,7 +398,7 @@ function Ingredients({
   return (
     <>
       {Object.entries(inputs).map(([sym, amt], i) => {
-        const crafted = engine.sourcedByCrafting(mode, sym);
+        const src = engine.sourcing(mode, sym);
         return (
           <span key={sym}>
             {i > 0 && " + "}
@@ -405,8 +411,11 @@ function Ingredients({
               itemName(sym)
             )}
             {mode !== "market" && (
-              <span className={"src " + (crafted ? "make" : "buy")}>
-                {crafted ? "ทำเอง" : "ซื้อ"}
+              <span
+                className={"src " + (src.crafted ? "make" : "buy")}
+                title={sourcingReason(src)}
+              >
+                {src.crafted ? "ทำเอง" : "ซื้อ"}
               </span>
             )}
           </span>
@@ -551,4 +560,11 @@ function PriceStatus({
       )}
     </section>
   );
+}
+
+/** คำอธิบายว่าทำไมชั้นนี้ถึงเลือกซื้อหรือทำเอง ใช้เป็น tooltip ของป้าย */
+function sourcingReason(src: Sourcing): string {
+  if (!Number.isFinite(src.craft)) return "ไม่มีโรงงานผลิต ต้องซื้อจากตลาดอย่างเดียว";
+  const cheaper = src.crafted ? "ทำเองถูกกว่า" : "ซื้อถูกกว่า";
+  return `${cheaper} — ซื้อ ${num(src.market, 4)} vs ทำเอง ${num(src.craft, 4)} ต่อชิ้น`;
 }
