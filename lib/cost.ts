@@ -41,10 +41,18 @@ export type CostedRow = Row & {
   perday: number;
 };
 
+/**
+ * เลเวลที่ทำให้ต้นทุนวัตถุดิบต่อชิ้นต่ำสุด
+ * anyLevel = ทุกเลเวลใช้วัตถุดิบต่อชิ้นเท่ากัน เลเวลไม่มีผลกับต้นทุน
+ */
+export type CraftLevel = { lv: number; anyLevel: boolean };
+
 export type CostEngine = {
   prices: PriceTable;
   unitCost(mode: CostMode, sym: string): number;
   sourcedByCrafting(mode: CostMode, sym: string): boolean;
+  /** เลเวลของโรงงานที่ป้อนให้ ซึ่งใช้คิดต้นทุนทำเอง (null เมื่อคราฟต์ไม่ได้) */
+  craftLevel(mode: CostMode, sym: string): CraftLevel | null;
   /** speed = ตัวคูณความเร็วการผลิต (2 = เวลาต่อรอบลดครึ่ง จากโฆษณา ads2x) */
   costRows(f: Factory, mode: CostMode, speed?: number): CostedRow[];
   shoppingList(row: Row, mode: CostMode): Purchase[];
@@ -91,6 +99,7 @@ function createEngine(prices: PriceTable): CostEngine {
     const unitMemo: Record<string, number> = {};
     const craftMemo: Record<string, number> = {};
     const rowMemo: Record<string, Row | null> = {};
+    const levelMemo: Record<string, CraftLevel> = {};
     const visiting = new Set<string>();
 
     const unit = (sym: string): number => {
@@ -107,12 +116,18 @@ function createEngine(prices: PriceTable): CostEngine {
       const craft = best?.unitCost ?? Infinity;
       craftMemo[sym] = craft;
       rowMemo[sym] = best?.row ?? null;
+      if (best) {
+        const anyLevel = DATA.factories[sym].rows
+          .filter((r) => Object.keys(r.inputs).length > 0)
+          .every((r) => Math.abs(rowUnitCost(r, unit) - craft) <= Math.abs(craft) * 1e-9);
+        levelMemo[sym] = { lv: best.row.lv, anyLevel };
+      }
       return (unitMemo[sym] = mode === "mixed" ? Math.min(market, craft) : craft);
     };
 
     for (const sym of Object.keys(buy)) unit(sym);
     for (const sym of Object.keys(DATA.factories)) unit(sym);
-    return { unit: unitMemo, craft: craftMemo, row: rowMemo };
+    return { unit: unitMemo, craft: craftMemo, row: rowMemo, level: levelMemo };
   };
 
   const model: Record<CostMode, ReturnType<typeof buildModel>> = {
@@ -137,10 +152,14 @@ function createEngine(prices: PriceTable): CostEngine {
   const cheapestRowFor = (mode: CostMode, sym: string): Row | null =>
     model[mode].row[sym] ?? null;
 
+  const craftLevel = (mode: CostMode, sym: string): CraftLevel | null =>
+    model[mode].level[sym] ?? null;
+
   return {
     prices,
     unitCost,
     sourcedByCrafting,
+    craftLevel,
 
     costRows(f, mode, speed = 1) {
       const price = sell[f.output] ?? 0;

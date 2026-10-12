@@ -3,7 +3,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import SummaryTiles from "@/components/SummaryTiles";
 import { DATA } from "@/lib/data";
-import { costEngine, isPurchasedOnly, type CostedRow, type CostEngine } from "@/lib/cost";
+import {
+  costEngine,
+  isPurchasedOnly,
+  type CostedRow,
+  type CostEngine,
+  type CraftLevel,
+} from "@/lib/cost";
 import { SNAPSHOT } from "@/lib/prices";
 import { usePrices } from "@/lib/usePrices";
 import { useStoredFlag } from "@/lib/useStoredFlag";
@@ -307,7 +313,8 @@ function FactoryDetail({
         </div>
         {chain.length > 0 && (
           <p className="chaininfo">
-            ต้องมีโรงงานในสายอีก {chain.length} ตัว: {chain.map(itemName).join(" · ")}
+            ต้องมีโรงงานในสายอีก {chain.length} ตัว:{" "}
+            {chain.map((sym) => `${itemName(sym)} ${levelLabel(engine.craftLevel(mode, sym))}`).join(" · ")}
           </p>
         )}
       </div>
@@ -425,7 +432,7 @@ function Ingredients({
             )}
             {mode !== "market" && (
               <span className={"src " + (crafted ? "make" : "buy")}>
-                {crafted ? "ทำเอง" : "ซื้อ"}
+                {crafted ? `ทำเอง ${levelLabel(engine.craftLevel(mode, sym))}` : "ซื้อ"}
               </span>
             )}
           </span>
@@ -579,4 +586,13 @@ function PriceStatus({
       )}
     </section>
   );
+}
+
+/**
+ * เลเวลของโรงงานที่ป้อนให้ ที่ต้นทุนทำเองถูกคิดไว้
+ * ถ้าทุกเลเวลใช้วัตถุดิบต่อชิ้นเท่ากัน เลเวลไหนก็ได้ต้นทุนเท่ากัน
+ */
+function levelLabel(level: CraftLevel | null): string {
+  if (!level) return "";
+  return level.anyLevel ? "ทุก Lv" : `Lv${level.lv}`;
 }
