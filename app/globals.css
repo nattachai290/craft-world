@@ -172,6 +172,16 @@ h1 { font-size: clamp(1.35rem, 5vw, 2.2rem); font-weight: 800; letter-spacing: -
 }
 .modes button:hover { color: var(--ink); }
 .modes button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.adsbox {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+  font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--ink);
+  min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface2); cursor: pointer; user-select: none;
+}
+.adsbox:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.adsbox input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+.adsnote { font-family: var(--sans); font-weight: 400; font-size: .72rem; color: var(--muted); }
+@media (min-width: 1024px) { .adsbox { min-height: 34px; } }
 .modedesc { margin: 10px 0 0; font-size: .8rem; color: var(--muted); text-wrap: pretty; }
 
 .chaininfo {

@@ -45,7 +45,8 @@ export type CostEngine = {
   prices: PriceTable;
   unitCost(mode: CostMode, sym: string): number;
   sourcedByCrafting(mode: CostMode, sym: string): boolean;
-  costRows(f: Factory, mode: CostMode): CostedRow[];
+  /** speed = ตัวคูณความเร็วการผลิต (2 = เวลาต่อรอบลดครึ่ง จากโฆษณา ads2x) */
+  costRows(f: Factory, mode: CostMode, speed?: number): CostedRow[];
   shoppingList(row: Row, mode: CostMode): Purchase[];
   craftChain(sym: string, mode: CostMode): string[];
 };
@@ -141,7 +142,7 @@ function createEngine(prices: PriceTable): CostEngine {
     unitCost,
     sourcedByCrafting,
 
-    costRows(f, mode) {
+    costRows(f, mode, speed = 1) {
       const price = sell[f.output] ?? 0;
       return f.rows.map((r) => {
         const cost = Object.entries(r.inputs).reduce(
@@ -156,7 +157,8 @@ function createEngine(prices: PriceTable): CostEngine {
           cost,
           profit,
           pct: cost > 0 ? (profit / cost) * 100 : null,
-          perday: profit * (86400 / r.dur),
+          dur: r.dur / speed,
+          perday: profit * (86400 / (r.dur / speed)),
         };
       });
     },

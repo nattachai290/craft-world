@@ -81,6 +81,8 @@ function scrollIntoViewOnNarrow(el: HTMLElement | null) {
 
 export default function ProfitMatrix() {
   const [mode, setMode] = useState<CostMode>("market");
+  // ads2x: ดูโฆษณาแล้วเวลาผลิตต่อรอบลดครึ่ง กำไรต่อรอบเท่าเดิม แต่ได้รอบต่อวันเพิ่มเป็นสองเท่า
+  const [ads2x, setAds2x] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("perday");
   const [profitOnly, setProfitOnly] = useState(false);
   const [query, setQuery] = useState("");
@@ -93,8 +95,8 @@ export default function ProfitMatrix() {
   const engine = useMemo(() => costEngine(prices), [prices]);
 
   const costed = useMemo(
-    () => new Map(FACTORIES.map((f) => [f.output, engine.costRows(f, mode)] as const)),
-    [mode, engine],
+    () => new Map(FACTORIES.map((f) => [f.output, engine.costRows(f, mode, ads2x ? 2 : 1)] as const)),
+    [mode, engine, ads2x],
   );
   const rowsOf = (f: Factory) => costed.get(f.output) ?? [];
 
@@ -146,6 +148,15 @@ export default function ProfitMatrix() {
               </button>
             ))}
           </div>
+          <label className="adsbox">
+            <input
+              type="checkbox"
+              checked={ads2x}
+              onChange={(e) => setAds2x(e.target.checked)}
+            />
+            ads2x
+            <span className="adsnote">เวลาผลิต ÷2</span>
+          </label>
         </div>
         <p className="modedesc">{activeMode.desc}</p>
       </div>
