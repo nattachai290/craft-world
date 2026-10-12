@@ -6,6 +6,7 @@ import { DATA } from "@/lib/data";
 import { costEngine, isPurchasedOnly, type CostedRow, type CostEngine } from "@/lib/cost";
 import { SNAPSHOT } from "@/lib/prices";
 import { usePrices } from "@/lib/usePrices";
+import { useStoredFlag } from "@/lib/useStoredFlag";
 import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct, num } from "@/lib/format";
 import { isBaseItem, itemName } from "@/lib/items";
 import type { PriceTable } from "@/lib/prices";
@@ -82,7 +83,8 @@ function scrollIntoViewOnNarrow(el: HTMLElement | null) {
 export default function ProfitMatrix() {
   const [mode, setMode] = useState<CostMode>("market");
   // ads2x: ดูโฆษณาแล้วเวลาผลิตต่อรอบลดครึ่ง กำไรต่อรอบเท่าเดิม แต่ได้รอบต่อวันเพิ่มเป็นสองเท่า
-  const [ads2x, setAds2x] = useState(false);
+  // จำไว้ในเบราว์เซอร์ เปิดหน้าใหม่แล้วไม่ต้องติ๊กซ้ำ
+  const [ads2x, setAds2x] = useStoredFlag("craft-world:ads2x");
   const [sortKey, setSortKey] = useState<SortKey>("perday");
   const [profitOnly, setProfitOnly] = useState(false);
   const [query, setQuery] = useState("");
