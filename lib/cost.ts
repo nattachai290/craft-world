@@ -38,6 +38,13 @@ export type CostedRow = Row & {
   cost: number;
   profit: number;
   pct: number | null;
+  /**
+   * เวลาจริงต่อหนึ่งรอบ (วินาที) — รอบของโรงงานเป้าหมาย หรือเวลาที่โรงงานป้อน
+   * ตัวที่ช้าที่สุดต้องใช้ผลิตวัตถุดิบให้ครบหนึ่งรอบ แล้วแต่อย่างไหนนานกว่า
+   */
+  cycle: number;
+  /** โรงงานป้อนที่ช้ากว่าโรงงานเป้าหมาย (null = โรงงานเป้าหมายเป็นตัวกำหนดเอง) */
+  bottleneck: { sym: string; time: number } | null;
   perday: number;
 };
 
@@ -100,6 +107,8 @@ function createEngine(prices: PriceTable): CostEngine {
     const craftMemo: Record<string, number> = {};
     const rowMemo: Record<string, Row | null> = {};
     const levelMemo: Record<string, CraftLevel> = {};
+    /** เลเวลที่ใช้คิดเวลาผลิตของโรงงานป้อน */
+    const runRowMemo: Record<string, Row> = {};
     const visiting = new Set<string>();
 
     const unit = (sym: string): number => {
@@ -121,13 +130,19 @@ function createEngine(prices: PriceTable): CostEngine {
           .filter((r) => Object.keys(r.inputs).length > 0)
           .every((r) => Math.abs(rowUnitCost(r, unit) - craft) <= Math.abs(craft) * 1e-9);
         levelMemo[sym] = { lv: best.row.lv, anyLevel };
+        // ต้นทุนเท่ากันทุกเลเวล → ใช้เลเวลที่ผลิตต่อชั่วโมงได้มากที่สุด
+        runRowMemo[sym] = anyLevel
+          ? DATA.factories[sym].rows
+              .filter((r) => Object.keys(r.inputs).length > 0)
+              .reduce((a, b) => (b.out / b.dur > a.out / a.dur ? b : a))
+          : best.row;
       }
       return (unitMemo[sym] = mode === "mixed" ? Math.min(market, craft) : craft);
     };
 
     for (const sym of Object.keys(buy)) unit(sym);
     for (const sym of Object.keys(DATA.factories)) unit(sym);
-    return { unit: unitMemo, craft: craftMemo, row: rowMemo, level: levelMemo };
+    return { unit: unitMemo, craft: craftMemo, row: rowMemo, level: levelMemo, runRow: runRowMemo };
   };
 
   const model: Record<CostMode, ReturnType<typeof buildModel>> = {
@@ -149,6 +164,31 @@ function createEngine(prices: PriceTable): CostEngine {
   };
 
   /** เลเวลที่คราฟต์ได้ถูกที่สุด ใช้กางรายการซื้อกับสายโรงงาน */
+  /**
+   * เวลาที่โรงงานป้อนแต่ละตัวต้องใช้ ผลิตวัตถุดิบให้พอสำหรับหนึ่งรอบของแถวนี้ (วินาที)
+   *
+   * สมมติว่ามีโรงงานแต่ละชนิดอย่างละโรง เดินพร้อมกัน — ทั้งสายจึงได้รอบต่อวัน
+   * เท่ากับตัวที่ช้าที่สุด (คอขวด) ไม่ใช่ผลรวมของทุกชั้น
+   */
+  const feederTimes = (row: Row, mode: CostMode): Map<string, number> => {
+    const need = new Map<string, number>();
+    const walk = (sym: string, qty: number, depth: number) => {
+      if (depth >= 64 || !sourcedByCrafting(mode, sym)) return;
+      const r = model[mode].row[sym];
+      if (!r) return;
+      need.set(sym, (need.get(sym) ?? 0) + qty);
+      for (const [s, q] of Object.entries(r.inputs)) walk(s, (qty * q) / r.out, depth + 1);
+    };
+    for (const [sym, qty] of Object.entries(row.inputs)) walk(sym, qty, 0);
+
+    const times = new Map<string, number>();
+    for (const [sym, qty] of need) {
+      const run = model[mode].runRow[sym];
+      if (run) times.set(sym, (qty / run.out) * run.dur);
+    }
+    return times;
+  };
+
   const cheapestRowFor = (mode: CostMode, sym: string): Row | null =>
     model[mode].row[sym] ?? null;
 
@@ -170,6 +210,14 @@ function createEngine(prices: PriceTable): CostEngine {
         );
         const rev = r.out * price;
         const profit = rev - cost;
+
+        // ads2x เร่งทุกโรงงานในสาย ไม่ใช่แค่โรงงานเป้าหมาย
+        let bottleneck: CostedRow["bottleneck"] = null;
+        for (const [sym, t] of feederTimes(r, mode)) {
+          if (t > r.dur && (!bottleneck || t > bottleneck.time)) bottleneck = { sym, time: t };
+        }
+        const cycle = (bottleneck?.time ?? r.dur) / speed;
+
         return {
           ...r,
           rev,
@@ -177,7 +225,9 @@ function createEngine(prices: PriceTable): CostEngine {
           profit,
           pct: cost > 0 ? (profit / cost) * 100 : null,
           dur: r.dur / speed,
-          perday: profit * (86400 / (r.dur / speed)),
+          cycle,
+          bottleneck: bottleneck && { sym: bottleneck.sym, time: bottleneck.time / speed },
+          perday: profit * (86400 / cycle),
         };
       });
     },

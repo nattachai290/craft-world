@@ -24,8 +24,12 @@ export function fmtPct(p: number | null | undefined): string {
   return (p >= 0 ? "+" : "") + p.toFixed(1) + "%";
 }
 
-/** วินาที → 30s / 7.5m / 12h */
+/** วินาที → 30s / 7.5m / 12h / 2.1d */
 export function dur(s: number): string {
+  if (s >= 172800) {
+    const d = s / 86400;
+    return (Number.isInteger(d) ? d : d.toFixed(1)) + "d";
+  }
   if (s >= 3600) {
     const h = s / 3600;
     return (Number.isInteger(h) ? h : h.toFixed(1)) + "h";

@@ -373,7 +373,7 @@ function FactoryDetail({
                     </th>
                     <td className="c-out">{fmt(r.out, r.out < 10 ? 2 : 0)}</td>
                     <td className="c-in">{ins}</td>
-                    <td className="c-dur">{dur(r.dur)}</td>
+                    <td className={"c-dur" + (r.bottleneck ? " slow" : "")}>{dur(r.cycle)}</td>
                     <td className="c-cost">{fmt(r.cost, 2)}</td>
                     <td className="c-rev">{fmt(r.rev, 2)}</td>
                     <td className={pos ? "pos" : "neg"}>{fmtc(r.profit)}</td>
@@ -385,7 +385,8 @@ function FactoryDetail({
                     <td colSpan={4}>
                       <span className="sub-k">ผลผลิต</span> {fmt(r.out, r.out < 10 ? 2 : 0)}
                       <span className="sub-sep">·</span>
-                      <span className="sub-k">รอบ</span> {dur(r.dur)}
+                      <span className="sub-k">รอบ</span>{" "}
+                      <span className={r.bottleneck ? "slow" : undefined}>{dur(r.cycle)}</span>
                       <span className="sub-sep">·</span>
                       <span className="sub-k">ใช้</span> {ins}
                     </td>
@@ -465,6 +466,14 @@ function BuyList({
         <h3>ต้องซื้ออะไรบ้าง · Lv{row.lv}</h3>
         <span className="buynote">
           ต่อ 1 รอบ ({dur(row.dur)}) ได้ {fmt(row.out, row.out < 10 ? 2 : 0)} ชิ้น
+          {row.bottleneck && (
+            <>
+              {" · "}
+              <span className="slow">
+                รอ {itemName(row.bottleneck.sym)} {dur(row.bottleneck.time)}
+              </span>
+            </>
+          )}
         </span>
       </div>
 
