@@ -91,28 +91,59 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /**
- * เวลาที่ให้คำขอหนึ่งก้อนต่อหนึ่งครั้ง — ปกติต้นทางตอบใน 1–3 วินาที
- * แต่บางคำขอค้างแบบสุ่มเป็น 5–9 วินาที ตัดทิ้งแล้วยิงใหม่เร็วกว่ารอ
+ * ต้นทางตอบก้อนหนึ่งใน 1–3 วินาทีเป็นปกติ แต่บางคำขอค้างแบบสุ่มนานเป็นสิบวินาที
+ * และค้างซ้ำได้อีก การรอให้หมดเวลาแล้วค่อยยิงใหม่จึงช้าเกินงบ
+ *
+ * ใช้ยิงสำรองล่วงหน้าแทน: ก้อนไหนยังไม่ตอบใน HEDGE_MS ยิงสำเนาขนานไปอีกชุด
+ * ไม่ยกเลิกตัวเดิม เอาตัวที่ตอบก่อน แล้วยกเลิกที่เหลือ (สูงสุด MAX_COPIES ชุด)
  */
-const ATTEMPT_MS = 7_000;
-const ATTEMPTS = 2;
+const HEDGE_MS = 3_000;
+const MAX_COPIES = 3;
 
-/** ยิงก้อนเดียวซ้ำได้ถ้าค้างหรือต้นทางพลาด โดยไม่ต้องเริ่มทั้งชุดใหม่ */
-async function runQuotesWithRetry(
+function runQuotesHedged(
   endpoint: string,
   specs: QuoteSpec[],
   signal: AbortSignal,
 ): Promise<Map<string, number>> {
-  let lastError: unknown;
-  for (let i = 0; i < ATTEMPTS; i++) {
-    if (signal.aborted) break;
-    try {
-      return await runQuotes(endpoint, specs, AbortSignal.any([signal, AbortSignal.timeout(ATTEMPT_MS)]));
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw signal.aborted ? signal.reason : lastError;
+  return new Promise((resolve, reject) => {
+    const copies: AbortController[] = [];
+    let started = 0;
+    let failed = 0;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (done: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      for (const c of copies) c.abort();
+      done();
+    };
+    const onAbort = () => finish(() => reject(signal.reason));
+
+    const launch = () => {
+      if (settled || started >= MAX_COPIES) return;
+      started++;
+      const copy = new AbortController();
+      copies.push(copy);
+      clearTimeout(timer);
+      if (started < MAX_COPIES) timer = setTimeout(launch, HEDGE_MS);
+
+      runQuotes(endpoint, specs, AbortSignal.any([signal, copy.signal])).then(
+        (result) => finish(() => resolve(result)),
+        (err) => {
+          failed++;
+          if (failed >= MAX_COPIES) finish(() => reject(err));
+          else launch(); // พลาดเร็ว (เช่น 5xx) ไม่ต้องรอครบ HEDGE_MS
+        },
+      );
+    };
+
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    launch();
+  });
 }
 
 async function runAll(
@@ -123,7 +154,7 @@ async function runAll(
 ): Promise<Map<string, number>> {
   // ก้อนในรอบเดียวกันไม่ขึ้นต่อกัน ยิงพร้อมกันได้ เวลารวมจะได้ไม่ชน timeout ง่าย ๆ
   const results = await Promise.all(
-    chunk(specs, batchSize).map((batch) => runQuotesWithRetry(endpoint, batch, signal)),
+    chunk(specs, batchSize).map((batch) => runQuotesHedged(endpoint, batch, signal)),
   );
   const merged = new Map<string, number>();
   for (const r of results) for (const [k, v] of r) merged.set(k, v);
