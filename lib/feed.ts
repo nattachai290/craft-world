@@ -90,6 +90,31 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/**
+ * เวลาที่ให้คำขอหนึ่งก้อนต่อหนึ่งครั้ง — ปกติต้นทางตอบใน 1–3 วินาที
+ * แต่บางคำขอค้างแบบสุ่มเป็น 5–9 วินาที ตัดทิ้งแล้วยิงใหม่เร็วกว่ารอ
+ */
+const ATTEMPT_MS = 7_000;
+const ATTEMPTS = 2;
+
+/** ยิงก้อนเดียวซ้ำได้ถ้าค้างหรือต้นทางพลาด โดยไม่ต้องเริ่มทั้งชุดใหม่ */
+async function runQuotesWithRetry(
+  endpoint: string,
+  specs: QuoteSpec[],
+  signal: AbortSignal,
+): Promise<Map<string, number>> {
+  let lastError: unknown;
+  for (let i = 0; i < ATTEMPTS; i++) {
+    if (signal.aborted) break;
+    try {
+      return await runQuotes(endpoint, specs, AbortSignal.any([signal, AbortSignal.timeout(ATTEMPT_MS)]));
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw signal.aborted ? signal.reason : lastError;
+}
+
 async function runAll(
   endpoint: string,
   specs: QuoteSpec[],
@@ -98,7 +123,7 @@ async function runAll(
 ): Promise<Map<string, number>> {
   // ก้อนในรอบเดียวกันไม่ขึ้นต่อกัน ยิงพร้อมกันได้ เวลารวมจะได้ไม่ชน timeout ง่าย ๆ
   const results = await Promise.all(
-    chunk(specs, batchSize).map((batch) => runQuotes(endpoint, batch, signal)),
+    chunk(specs, batchSize).map((batch) => runQuotesWithRetry(endpoint, batch, signal)),
   );
   const merged = new Map<string, number>();
   for (const r of results) for (const [k, v] of r) merged.set(k, v);
@@ -109,7 +134,7 @@ async function runAll(
 export async function fetchQuotes(
   endpoint: string,
   signal: AbortSignal,
-  batchSize = 24,
+  batchSize = 8,
 ): Promise<{ buy: Record<string, number>; sell: Record<string, number> }> {
   // รอบแรก: ขาย 1 ชิ้นได้กี่ COIN
   const sellAmounts = await runAll(

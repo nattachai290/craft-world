@@ -5,8 +5,14 @@ import { SNAPSHOT, parsePriceFeed, type PriceTable } from "@/lib/prices";
 /** ราคาต้องสดเสมอ ห้ามให้ Next แคชไว้ */
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+/** ให้ Vercel รอ function ได้นานกว่างบเวลาดึงราคา ไม่งั้นโดนตัดก่อนได้ตอบ snapshot */
+export const maxDuration = 60;
 
-const TIMEOUT_MS = 12_000;
+/**
+ * งบเวลารวมของการดึงหนึ่งครั้ง (สองรอบต่อกัน ขายแล้วค่อยซื้อ) — ปกติใช้ 4–6 วินาที
+ * เผื่อให้แต่ละรอบยิงซ้ำก้อนที่ค้างได้หนึ่งครั้ง
+ */
+const TIMEOUT_MS = 25_000;
 /** กันหลายแท็บยิงพร้อมกันจนถล่มต้นทาง สั้นกว่ารอบรีเฟรช 60 วิ ของหน้าเว็บ */
 const CACHE_MS = 30_000;
 
