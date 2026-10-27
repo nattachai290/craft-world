@@ -13,6 +13,8 @@ import {
 import { SNAPSHOT } from "@/lib/prices";
 import { usePrices } from "@/lib/usePrices";
 import { useStoredFlag } from "@/lib/useStoredFlag";
+import { useStoredMasteries } from "@/lib/useStoredMasteries";
+import { MASTERY_MULTIPLIERS, masteryDiscountPct } from "@/lib/mastery";
 import { bestPctRow, bestRow, dur, fmt, fmtc, fmtPct, num } from "@/lib/format";
 import { isBaseItem, itemName } from "@/lib/items";
 import type { PriceTable } from "@/lib/prices";
@@ -91,6 +93,8 @@ export default function ProfitMatrix() {
   // ads2x: ดูโฆษณาแล้วเวลาผลิตต่อรอบลดครึ่ง กำไรต่อรอบเท่าเดิม แต่ได้รอบต่อวันเพิ่มเป็นสองเท่า
   // จำไว้ในเบราว์เซอร์ เปิดหน้าใหม่แล้วไม่ต้องติ๊กซ้ำ
   const [ads2x, setAds2x] = useStoredFlag("craft-world:ads2x");
+  // mastery ของแต่ละโรงงาน (0–10) ลดวัตถุดิบต่อรอบ จำไว้ในเบราว์เซอร์
+  const [masteries, setMasteries] = useStoredMasteries();
   const [sortKey, setSortKey] = useState<SortKey>("perday");
   const [profitOnly, setProfitOnly] = useState(false);
   const [query, setQuery] = useState("");
@@ -100,7 +104,7 @@ export default function ProfitMatrix() {
   const detailRef = useRef<HTMLDivElement>(null);
 
   const { prices, nextAt, intervalSec, loading, error, refreshNow } = usePrices(REFRESH_SEC);
-  const engine = useMemo(() => costEngine(prices), [prices]);
+  const engine = useMemo(() => costEngine(prices, masteries), [prices, masteries]);
 
   const costed = useMemo(
     () => new Map(FACTORIES.map((f) => [f.output, engine.costRows(f, mode, ads2x ? 2 : 1)] as const)),
@@ -262,6 +266,11 @@ export default function ProfitMatrix() {
             rows={rowsOf(detail)}
             mode={mode}
             engine={engine}
+            mastery={masteries[detail.output] ?? 0}
+            onMastery={(lv) => setMasteries({ ...masteries, [detail.output]: lv })}
+            onMasteryAll={(lv) =>
+              setMasteries(Object.fromEntries(FACTORIES.map((f) => [f.output, lv])))
+            }
           />
         </div>
       </div>
@@ -274,11 +283,17 @@ function FactoryDetail({
   rows,
   mode,
   engine,
+  mastery,
+  onMastery,
+  onMasteryAll,
 }: {
   factory: Factory;
   rows: CostedRow[];
   mode: CostMode;
   engine: CostEngine;
+  mastery: number;
+  onMastery: (level: number) => void;
+  onMasteryAll: (level: number) => void;
 }) {
   const best = bestRow(rows);
   const bestPct = bestPctRow(rows);
@@ -298,6 +313,24 @@ function FactoryDetail({
         <div className="rt">
           สูตร: <b>{recipe(factory)}</b> → {factory.name} ·
           สูงสุด Lv{factory.maxlv}
+        </div>
+        <div className="masteryrow">
+          <label>
+            Mastery{" "}
+            <select value={mastery} onChange={(e) => onMastery(Number(e.target.value))}>
+              {MASTERY_MULTIPLIERS.map((_, lv) => (
+                <option key={lv} value={lv}>
+                  {lv}
+                </option>
+              ))}
+            </select>
+          </label>
+          {mastery > 0 && (
+            <span className="masterynote">วัตถุดิบ −{masteryDiscountPct(mastery).toFixed(1)}%</span>
+          )}
+          <button type="button" className="linkbtn" onClick={() => onMasteryAll(mastery)}>
+            ใช้ค่านี้กับทุกโรงงาน
+          </button>
         </div>
         <div className="best">
           <span className={"chip " + (best.profit >= 0 ? "pos" : "neg")}>

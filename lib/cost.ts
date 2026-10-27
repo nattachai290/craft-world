@@ -1,4 +1,5 @@
 import { DATA } from "./data";
+import { masteryKey, masteryMultiplier, type Masteries } from "./mastery";
 import type { PriceTable } from "./prices";
 import type { CostMode, Factory, Row } from "./types";
 
@@ -91,9 +92,32 @@ function cheapestCraftRow(
   return best;
 }
 
-function createEngine(prices: PriceTable): CostEngine {
+/**
+ * สูตรของทุกโรงงานหลังหัก mastery — วัตถุดิบต่อรอบหารด้วยตัวคูณของระดับนั้น
+ * โรงงานที่ mastery 0 ใช้ข้อมูลเดิมโดยตรง
+ */
+function applyMastery(masteries: Masteries): Record<string, Factory> {
+  const out: Record<string, Factory> = {};
+  for (const [sym, f] of Object.entries(DATA.factories)) {
+    const m = masteryMultiplier(masteries[sym] ?? 0);
+    out[sym] =
+      m === 1
+        ? f
+        : {
+            ...f,
+            rows: f.rows.map((r) => ({
+              ...r,
+              inputs: Object.fromEntries(Object.entries(r.inputs).map(([s, q]) => [s, q / m])),
+            })),
+          };
+  }
+  return out;
+}
+
+function createEngine(prices: PriceTable, masteries: Masteries): CostEngine {
   const buy = prices.buy;
   const sell = prices.sell;
+  const factories = applyMastery(masteries);
 
   /**
    * ต้นทุนต่อหน่วยของทุกไอเทมภายใต้โมเดลหนึ่ง (กราฟสูตรเป็น DAG จึงไม่วน)
@@ -119,20 +143,20 @@ function createEngine(prices: PriceTable): CostEngine {
 
       if (visiting.has(sym)) return Infinity;
       visiting.add(sym);
-      const best = cheapestCraftRow(DATA.factories[sym], unit);
+      const best = cheapestCraftRow(factories[sym], unit);
       visiting.delete(sym);
 
       const craft = best?.unitCost ?? Infinity;
       craftMemo[sym] = craft;
       rowMemo[sym] = best?.row ?? null;
       if (best) {
-        const anyLevel = DATA.factories[sym].rows
+        const anyLevel = factories[sym].rows
           .filter((r) => Object.keys(r.inputs).length > 0)
           .every((r) => Math.abs(rowUnitCost(r, unit) - craft) <= Math.abs(craft) * 1e-9);
         levelMemo[sym] = { lv: best.row.lv, anyLevel };
         // ต้นทุนเท่ากันทุกเลเวล → ใช้เลเวลที่ผลิตต่อชั่วโมงได้มากที่สุด
         runRowMemo[sym] = anyLevel
-          ? DATA.factories[sym].rows
+          ? factories[sym].rows
               .filter((r) => Object.keys(r.inputs).length > 0)
               .reduce((a, b) => (b.out / b.dur > a.out / a.dur ? b : a))
           : best.row;
@@ -141,7 +165,7 @@ function createEngine(prices: PriceTable): CostEngine {
     };
 
     for (const sym of Object.keys(buy)) unit(sym);
-    for (const sym of Object.keys(DATA.factories)) unit(sym);
+    for (const sym of Object.keys(factories)) unit(sym);
     return { unit: unitMemo, craft: craftMemo, row: rowMemo, level: levelMemo, runRow: runRowMemo };
   };
 
@@ -203,7 +227,7 @@ function createEngine(prices: PriceTable): CostEngine {
 
     costRows(f, mode, speed = 1) {
       const price = sell[f.output] ?? 0;
-      return f.rows.map((r) => {
+      return (factories[f.output] ?? f).rows.map((r) => {
         const cost = Object.entries(r.inputs).reduce(
           (sum, [sym, qty]) => sum + qty * unitCost(mode, sym),
           0,
@@ -272,21 +296,27 @@ function createEngine(prices: PriceTable): CostEngine {
         const best = cheapestRowFor(mode, s);
         if (best) for (const input of Object.keys(best.inputs)) walk(input);
       };
-      const f = DATA.factories[sym];
+      const f = factories[sym];
       if (f) for (const r of f.rows) for (const input of Object.keys(r.inputs)) walk(input);
       return [...seen];
     },
   };
 }
 
-/** สร้าง engine ครั้งเดียวต่อชุดราคาหนึ่งชุด ราคาเดิมจะได้ไม่ต้องคำนวณซ้ำ */
-const engines = new WeakMap<PriceTable, CostEngine>();
+/** สร้าง engine ครั้งเดียวต่อชุดราคากับชุด mastery หนึ่งชุด จะได้ไม่ต้องคำนวณซ้ำ */
+const engines = new WeakMap<PriceTable, Map<string, CostEngine>>();
 
-export function costEngine(prices: PriceTable): CostEngine {
-  let e = engines.get(prices);
+export function costEngine(prices: PriceTable, masteries: Masteries = {}): CostEngine {
+  let byMastery = engines.get(prices);
+  if (!byMastery) {
+    byMastery = new Map();
+    engines.set(prices, byMastery);
+  }
+  const key = masteryKey(masteries);
+  let e = byMastery.get(key);
   if (!e) {
-    e = createEngine(prices);
-    engines.set(prices, e);
+    e = createEngine(prices, masteries);
+    byMastery.set(key, e);
   }
   return e;
 }
